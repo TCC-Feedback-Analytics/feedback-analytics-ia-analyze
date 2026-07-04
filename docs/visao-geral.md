@@ -2,7 +2,7 @@
 
 ## O Que É
 
-O `ia-analyze` é um **serviço Serverless independente** responsável por uma única coisa: receber lotes de feedbacks, chamar o **Google Gemini** (SDK `@google/genai`, modelo `gemini-2.5-flash`) e retornar análises estruturadas.
+O `ia-analyze` é um **serviço Serverless independente** responsável por uma única coisa: receber lotes de feedbacks, chamar o **Google Gemini** e retornar análises estruturadas.
 
 Ele não tem banco de dados, não autentica usuários e não conhece a lógica de negócio do sistema. É um processador puro de texto.
 
@@ -17,7 +17,7 @@ Separar a IA do API Gateway traz três vantagens práticas:
 ## Como Funciona
 
 1. O API Gateway envia `POST /internal/ia-analyze/analyze` com `{ enterprise_context, batches[] }`
-2. O serviço valida o **token interno** (`x-ia-analyze-token`) — rejeita qualquer requisição não autorizada
+2. Se um **token interno** estiver configurado (`IA_ANALYZE_INTERNAL_TOKEN`), o serviço valida o header `x-ia-analyze-token` e rejeita requisições sem token válido (`401`); sem token configurado, aceita a requisição (default — só para dev local)
 3. Para cada batch, chama o provedor LLM com um prompt estruturado por escopo
 4. Processa e **sanitiza** a resposta: valida sentimentos, extrai keywords e categorias, descarta alucinações. Além disso, extrai **aspectos (ABSA)** com sentimento por aspecto, calcula uma **intensidade graduada** do sentimento geral (`sentiment_score` em `[-1,1]`) e uma **confiança** da classificação (`confidence` em `[0,1]`) por feedback, e mapeia cada categoria saneada para uma **taxonomia fixa por escopo** (canonicalização — categorias sem correspondência ficam como "emergentes")
 5. Retorna `{ analyses[], contexts[] }` ao Gateway
