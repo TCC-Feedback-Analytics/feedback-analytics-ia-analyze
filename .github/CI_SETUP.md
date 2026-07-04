@@ -1,7 +1,7 @@
 # CI / Deploy — IA Analyze
 
 Consome **apenas tipos** de `@feedback/lib-shared` (repositório **público**
-`feedback-analytics-contracts`, via git tag). O `npm ci` clona **sem token**;
+`feedback-analytics-contracts`, via git tag `v1.0.0`). O `npm ci` clona **sem token**;
 os workflows só reescrevem `ssh→https` antes do install:
 
 ```
@@ -20,9 +20,11 @@ O **CI** (lint/typecheck/unit) **não precisa de secret** — os testes são moc
 
 ## Env de runtime (no projeto Vercel, NÃO como GitHub secret)
 
-Chave do Gemini (`@google/genai`) e o token do header `x-ia-analyze-token`
-(autenticação entre o api-gateway e este serviço) são variáveis de ambiente
-configuradas nas **Settings do projeto Vercel** — não entram no CI.
+A chave do Gemini (`GEMINI_API_KEY`, usada pelo `@google/genai`) e o token
+interno (`IA_ANALYZE_INTERNAL_TOKEN`, autenticação do header `x-ia-analyze-token`
+entre o api-gateway e este serviço) são variáveis de ambiente configuradas nas
+**Settings do projeto Vercel** — não entram no CI. (Opcionais locais: `PORT`,
+`IA_GEMINI_CONCURRENCY`; ver `.env.example`.)
 
 ## Deploy
 

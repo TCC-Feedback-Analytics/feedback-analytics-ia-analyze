@@ -2,9 +2,7 @@
 
 > **Base URL (desenvolvimento):** `http://localhost:4100`
 
-:::warning Serviço Interno
-Esta API é exclusivamente para comunicação interna. Nunca exponha esses endpoints diretamente ao frontend. Todo acesso deve vir do API Gateway, que injeta o token de autenticação interna.
-:::
+> ⚠️ **Serviço interno.** Esta API é exclusivamente para comunicação interna — nunca exponha esses endpoints diretamente ao frontend. Todo acesso vem do API Gateway. Quando `IA_ANALYZE_INTERNAL_TOKEN` está configurado, o Gateway envia o token no header `x-ia-analyze-token` (ver nota sobre o comportamento opcional abaixo).
 
 ---
 
@@ -204,5 +202,5 @@ Content-Type: application/json
 | `401` em toda requisição | Token interno errado | Iguale `IA_ANALYZE_INTERNAL_TOKEN` no Gateway e no IA Analyze |
 | `500 missing_gemini_api_key` | Variável não configurada | Adicione `GEMINI_API_KEY` ao `.env` do serviço |
 | `502 failed_ia_request` | Provedor LLM inacessível | Verifique a chave de API e a conectividade com a internet. Só é propagado **após esgotar o retry/backoff** do provider (até 4 tentativas, com backoff exponencial + jitter e respeito ao `retryDelay` do Gemini) |
-| `502 invalid_ai_response` | Modelo retornou JSON malformado **ou** saída truncada (`finishReason=MAX_TOKENS`) | Tente novamente; pode ser instabilidade do modelo. Se for truncamento recorrente, reduza o tamanho dos lotes (`IA_MAX_FEEDBACKS_PER_BATCH`) |
-| Analyses vazias (`analyses: []`) | Todos os feedbacks com sentimento inválido | Verifique se os feedbacks têm `message` não-vazia |
+| `502 invalid_ai_response` | Modelo retornou JSON malformado **ou** saída truncada (`finishReason=MAX_TOKENS`) | Tente novamente; pode ser instabilidade do modelo. Se for truncamento recorrente, reduza o tamanho dos lotes na configuração do **API Gateway** (variável `IA_MAX_FEEDBACKS_PER_BATCH` **do Gateway** — o fatiamento de lotes acontece lá, não neste serviço) |
+| Analyses vazias (`analyses: []`) | O modelo não retornou sentimento válido para nenhum feedback (ou todos os lotes com conteúdo falharam) | Reenvie; confira que os feedbacks têm `message` significativa (a `message` é a fonte exclusiva de categorias/keywords) e cheque os logs por `failureCodes` (`failed_ia_request` vs `invalid_ai_response`) |
