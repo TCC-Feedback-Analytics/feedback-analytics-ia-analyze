@@ -1,5 +1,5 @@
 import { normalizeForComparison } from '../utils/normalizeForComparison.js';
-import type { IaAnalyzeFeedbackInput } from '../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
+import type { IaAnalyzeFeedbackInput } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 import type { SanitizeTermListParams } from '../../types/termProcessing.types.js';
 
 export type { SanitizeTermListParams };

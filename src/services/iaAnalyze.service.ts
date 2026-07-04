@@ -13,12 +13,12 @@ import type {
   IaAnalyzeRemoteFeedbackAnalysis,
   IaAnalyzeRemoteRunRequest,
   IaAnalyzeRemoteRunResponse,
-} from '../../../../shared/interfaces/contracts/ia-analyze/remote.contract.js';
+} from '@feedback/lib-shared/interfaces/contracts/ia-analyze/remote.contract';
 import type {
   IaAnalyzeFeedbackInput,
   IaAnalyzeRemoteBatchInput,
-} from '../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
-import type { IaAnalyzeContext } from '../../../../shared/interfaces/contracts/ia-analyze/analysis.contract.js';
+} from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
+import type { IaAnalyzeContext } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/analysis.contract';
 import type { ParsedIaResponse } from '../../types/iaApiClient.types.js';
 
 /**

@@ -4,8 +4,8 @@ import {
   sanitizeTermList,
 } from '../lib/termProcessing.js';
 import { canonicalizeCategories } from '../lib/categoryTaxonomy.js';
-import type { IaAnalyzeFeedbackInput } from '../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
-import type { IaAnalyzeScopeType } from '../../../../shared/interfaces/contracts/ia-analyze/scope.contract.js';
+import type { IaAnalyzeFeedbackInput } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
+import type { IaAnalyzeScopeType } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 
 /**
  * Essa função ela extraí categorias que realmente fazem sentido ser extraídas

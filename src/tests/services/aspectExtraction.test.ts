@@ -5,7 +5,7 @@ import {
   normalizeConfidence,
   scoreFromSentiment,
 } from '../../services/aspectExtraction.service.js';
-import type { IaAnalyzeFeedbackInput } from '../../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
+import type { IaAnalyzeFeedbackInput } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 
 const feedback = {
   id: 'fb-1',

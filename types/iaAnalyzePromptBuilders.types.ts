@@ -1,8 +1,8 @@
 import type {
   IaAnalyzeEnterpriseContext,
   IaAnalyzeFeedbackInput,
-} from '../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
-import type { IaAnalyzeScopeType } from '../../../shared/interfaces/contracts/ia-analyze/scope.contract.js';
+} from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
+import type { IaAnalyzeScopeType } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 
 /**
  * Tipos do construtor de prompts do dominio ia-analyze.

@@ -1,6 +1,6 @@
-import type { IaAnalyzeRemoteBatchInput } from '../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
-import type { IaAnalyzeContext } from '../../../../shared/interfaces/contracts/ia-analyze/analysis.contract.js';
-import type { IaAnalyzeInsights } from '../../../../shared/interfaces/contracts/ia-analyze/analysis.contract.js';
+import type { IaAnalyzeRemoteBatchInput } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
+import type { IaAnalyzeContext } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/analysis.contract';
+import type { IaAnalyzeInsights } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/analysis.contract';
 
 /**
  * Monta o contexto de análise de um lote de feedbacks.

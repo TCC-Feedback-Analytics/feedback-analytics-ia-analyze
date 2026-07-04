@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "services/ia-analyze/src/index.ts",
+      "src": "src/index.ts",
       "use": "@vercel/node",
       "config": {
         "maxDuration": 300
@@ -16,7 +16,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": "/services/ia-analyze/src/index.ts"
+      "destination": "/src/index.ts"
     }
   ]
 }

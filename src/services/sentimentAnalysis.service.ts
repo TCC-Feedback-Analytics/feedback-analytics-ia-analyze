@@ -1,4 +1,4 @@
-import type { IaAnalyzeSentiment } from '../../../../shared/interfaces/contracts/ia-analyze/scope.contract.js';
+import type { IaAnalyzeSentiment } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 import type { CanProcessAnalyzedItemParams } from '../../types/sentimentAnalysis.types.js';
 
 /**

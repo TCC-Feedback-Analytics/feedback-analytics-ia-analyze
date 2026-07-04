@@ -6,7 +6,7 @@ import {
   STRUCTURED_ANSWER_LABELS,
 } from '../../lib/termProcessing.js';
 import { normalizeForComparison } from '../../utils/normalizeForComparison.js';
-import type { IaAnalyzeFeedbackInput } from '../../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
+import type { IaAnalyzeFeedbackInput } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 
 describe('[Unidade] normalizeForComparison', () => {
   it('converte para minúsculas e remove acentos', () => {

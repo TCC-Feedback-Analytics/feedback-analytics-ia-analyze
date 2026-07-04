@@ -1,4 +1,4 @@
-import type { IaAnalyzeScopeType } from '../../../../../shared/interfaces/contracts/ia-analyze/scope.contract.js';
+import type { IaAnalyzeScopeType } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 import type { ScopeInstructionsByType } from '../../../types/iaAnalyzePromptBuilders.types.js';
 
 /**

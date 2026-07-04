@@ -1,11 +1,11 @@
 import { normalizeForComparison } from '../utils/normalizeForComparison.js';
 import { buildForbiddenTerms, isGroundedInMessage } from '../lib/termProcessing.js';
 import { isValidSentiment } from './sentimentAnalysis.service.js';
-import type { IaAnalyzeFeedbackInput } from '../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
+import type { IaAnalyzeFeedbackInput } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 import type {
   AspectAnalysis,
-} from '../../../../shared/interfaces/contracts/ia-analyze/remote.contract.js';
-import type { IaAnalyzeSentiment } from '../../../../shared/interfaces/contracts/ia-analyze/scope.contract.js';
+} from '@feedback/lib-shared/interfaces/contracts/ia-analyze/remote.contract';
+import type { IaAnalyzeSentiment } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 
 const MAX_ASPECTS = 6;
 

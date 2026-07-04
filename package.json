@@ -11,6 +11,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@feedback/lib-shared": "github:TCC-Feedback-Analytics/feedback-analytics-contracts#v1.0.0",
     "@google/genai": "^1.49.0",
     "dotenv": "^17.2.1",
     "express": "^5.1.0"

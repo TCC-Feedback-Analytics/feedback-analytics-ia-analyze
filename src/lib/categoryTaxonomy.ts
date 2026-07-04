@@ -1,5 +1,5 @@
 import { normalizeForComparison } from '../utils/normalizeForComparison.js';
-import type { IaAnalyzeScopeType } from '../../../../shared/interfaces/contracts/ia-analyze/scope.contract.js';
+import type { IaAnalyzeScopeType } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 
 /**
  * Taxonomia fixa de categorias (drivers de CX) por escopo — coding dedutivo.

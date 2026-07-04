@@ -4,7 +4,7 @@ import {
   sanitizeTermList,
   tokenizeRelevantWords,
 } from '../lib/termProcessing.js';
-import type { IaAnalyzeFeedbackInput } from '../../../../shared/interfaces/contracts/ia-analyze/input.contract.js';
+import type { IaAnalyzeFeedbackInput } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 
 /**
  * Gera palavras-chave de fallback a partir da própria mensagem.
