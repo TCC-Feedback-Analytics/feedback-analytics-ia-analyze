@@ -2,6 +2,8 @@
 
 Este documento detalha a arquitetura do serviço Serverless de IA (`ia-analyze`). Diferente do API Gateway, este serviço não possui conexão com o banco de dados. Sua única responsabilidade é processar textos de forma isolada, recebendo dados brutos e retornando análises estruturadas.
 
+> Este é o **repositório próprio** do serviço (`feedback-analytics-ia-analyze`) — a raiz é o próprio serviço. Os contratos vêm do pacote [`@feedback/lib-shared`](https://github.com/TCC-Feedback-Analytics/feedback-analytics-contracts); concepção e produto ficam no [repositório central de documentação](https://github.com/TCC-Feedback-Analytics/feedback-analytics).
+
 ## O Fluxo de Dados (Ida e Volta)
 
 O processamento ocorre de forma sequencial através das camadas do sistema, garantindo que os dados sejam validados, enviados para a IA e rigorosamente sanitizados antes de retornarem.
@@ -124,7 +126,7 @@ Como os lotes passaram a ser fatiados por tamanho no gateway, o número de chama
 ## Estrutura de Diretórios
 
 ```
-services/ia-analyze/
+feedback-analytics-ia-analyze/
 ├── src/
 │   ├── index.ts                            → Entry point do servidor Express
 │   ├── controllers/
@@ -137,9 +139,9 @@ services/ia-analyze/
 │   │   ├── aspectExtraction.service.ts     → Extração de aspectos (ABSA) ancorada no message
 │   │   └── globalInsights.service.ts       → Contexto por batch
 │   ├── providers/
-│   │   └── gemini.provider.ts              → Cliente HTTP do provedor LLM + analyzeBatch
+│   │   └── gemini.provider.ts              → Cliente do provedor LLM via SDK @google/genai + analyzeBatch
 │   ├── routes/
-│   │   └── iaAnalyze.routes.ts             → /health + /ia-analyze/analyze
+│   │   └── iaAnalyze.routes.ts             → /health + /ia-analyze/health + /ia-analyze/analyze (sob /internal)
 │   ├── lib/
 │   │   ├── iaAnalyzePromptBuilders.ts      → Construtores de prompt por escopo
 │   │   ├── termProcessing.ts               → sanitize, forbidden terms, tokenize
@@ -154,7 +156,7 @@ services/ia-analyze/
 │       ├── isInternalRequestAuthorized.ts
 │       ├── isObject.ts
 │       └── normalizeForComparison.ts
-├── types/                                  → Tipos compartilhados (fora de src/)
+├── types/                                  → Tipos locais (fora de src/) que compõem/reexportam contratos de @feedback/lib-shared
 │   ├── iaAnalyzeEngine.types.ts
 │   ├── iaAnalyzePromptBuilders.types.ts
 │   ├── iaApiClient.types.ts
@@ -167,21 +169,9 @@ services/ia-analyze/
     ├── routes/
     │   ├── analyze.test.ts
     │   └── health.test.ts
+    ├── providers/
+    │   └── gemini.provider.test.ts
     └── services/
         ├── sentiment.test.ts
         └── aspectExtraction.test.ts
 ```
-
----
-
-## Breaking Change — Reestruturação Completa
-
-> ⚠️ **Aviso: Breaking Change (homolog → main)**
-> 
-> O serviço foi completamente reescrito nesta branch:
-> 
-> **Antes (main):** arquivo único `sentimentAnalysis.ts` de 40 linhas, sem estrutura de serviços.
-> 
-> **Depois (homolog):** 5 serviços separados, provider isolado, biblioteca de processamento de termos, rotas próprias com health check, validação separada e tipos em arquivos dedicados.
-> 
-> Qualquer integração que importe módulos internos do `ia-analyze` diretamente precisará ser atualizada para os novos caminhos.
