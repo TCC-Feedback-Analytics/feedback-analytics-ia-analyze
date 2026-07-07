@@ -32,4 +32,4 @@ entre o api-gateway e este serviço) são variáveis de ambiente configuradas na
 `src/index.ts` direto (sem bundle). Reusa o mesmo projeto Vercel
 (`VERCEL_PROJECT_ID_IA_ANALYZE`) → URL não muda; o api-gateway continua
 chamando o serviço na mesma URL. Branch de staging: `developer` (alias
-`feedback-analytics-ia-homolog.vercel.app`).
+`feedback-analytics-ia-developer.vercel.app`).
