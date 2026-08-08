@@ -19,8 +19,8 @@ jobs:
     steps:
       - name: Validação manual de requests
         run: |
-          if [ "${{ github.ref_name }}" != "developer" ] && [ "${{ github.ref_name }}" != "main" ]; then
-            echo "Este workflow deve ser executado apenas nas branches main ou developer"
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "Este workflow deve ser executado apenas na branch main (produção)."
             exit 1
           fi
 
@@ -45,26 +45,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Deploy preview (developer)
-        if: github.ref_name == 'developer'
-        id: deploy-dev
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_IA_ANALYZE }}
-        run: |
-          URL=$(npx vercel deploy --yes --token "$VERCEL_TOKEN" --local-config vercel.json)
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-
-      - name: Atribuir alias fixo ao homolog
-        if: github.ref_name == 'developer'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          npx vercel alias set ${{ steps.deploy-dev.outputs.url }} feedback-analytics-ia-homolog.vercel.app --token "$VERCEL_TOKEN"
-
       - name: Deploy production (main)
-        if: github.ref_name == 'main'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}

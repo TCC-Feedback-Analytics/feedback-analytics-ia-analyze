@@ -31,5 +31,5 @@ entre o api-gateway e este serviço) são variáveis de ambiente configuradas na
 `workflow_dispatch` (manual, `confirm_deploy=ok`). `@vercel/node` roda
 `src/index.ts` direto (sem bundle). Reusa o mesmo projeto Vercel
 (`VERCEL_PROJECT_ID_IA_ANALYZE`) → URL não muda; o api-gateway continua
-chamando o serviço na mesma URL. Branch de staging: `developer` (alias
-`feedback-analytics-ia-homolog.vercel.app`).
+chamando o serviço na mesma URL. Aceito **apenas na branch `main`** — não há mais
+deploy da branch `developer`/alias de homologação.
