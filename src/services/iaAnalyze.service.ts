@@ -1,4 +1,5 @@
-import { createIaApiClient, IaApiClientError } from '../providers/gemini.provider.js';
+import { IaApiClientError } from '../providers/gemini.provider.js';
+import { createProvider, type LlmProvider } from '../providers/createProvider.js';
 import { canProcessAnalyzedItem } from './sentimentAnalysis.service.js';
 import { extractKeywords } from './keywordExtraction.service.js';
 import { extractCategories } from './categorization.service.js';
@@ -39,19 +40,55 @@ export class IaAnalyzeServiceError extends Error {
   }
 }
 
-const DEFAULT_GEMINI_CONCURRENCY = 3;
+const DEFAULT_LLM_CONCURRENCY = 3;
 
 /**
- * Quantas chamadas ao Gemini podem estar em voo ao mesmo tempo (configurável via
- * IA_GEMINI_CONCURRENCY). Com os lotes fatiados por tamanho, o número de chamadas
- * cresce — limitar a concorrência evita estourar o rate limit do Gemini (→ 429).
+ * Quantas chamadas ao LLM podem estar em voo ao mesmo tempo (configurável via
+ * IA_LLM_CONCURRENCY; aceita IA_GEMINI_CONCURRENCY por compatibilidade). Limitar
+ * a concorrência evita estourar o rate limit do provedor (→ 429).
  */
-function readGeminiConcurrency(): number {
-  const parsed = Number(String(process.env.IA_GEMINI_CONCURRENCY ?? '').trim());
+function readLlmConcurrency(): number {
+  const raw = process.env.IA_LLM_CONCURRENCY ?? process.env.IA_GEMINI_CONCURRENCY ?? '';
+  const parsed = Number(String(raw).trim());
   if (Number.isFinite(parsed) && parsed > 0) {
     return Math.floor(parsed);
   }
-  return DEFAULT_GEMINI_CONCURRENCY;
+  return DEFAULT_LLM_CONCURRENCY;
+}
+
+/** Credenciais/modelo do provedor, vindas por requisição (Camada 2 / BYO-key) ou do env. */
+export type LlmCreds = { provider?: string; apiKey?: string; model?: string };
+
+/**
+ * Resolve provedor/chave/modelo. Prioriza o `override` (headers, na Camada 2) e
+ * cai no env: `LLM_PROVIDER` (default `gemini`, para uma transição sem regressão),
+ * `LLM_MODEL`, e a chave do provedor escolhido (`OPENROUTER_API_KEY`/`GEMINI_API_KEY`).
+ */
+function resolveProviderConfig(override?: LlmCreds): {
+  provider: LlmProvider;
+  apiKey: string;
+  model?: string;
+} {
+  const providerRaw = (override?.provider ?? process.env.LLM_PROVIDER ?? 'gemini')
+    .trim()
+    .toLowerCase();
+  const provider: LlmProvider = providerRaw === 'openrouter' ? 'openrouter' : 'gemini';
+  const model = (override?.model ?? process.env.LLM_MODEL ?? '').trim() || undefined;
+  const apiKey = (
+    override?.apiKey ??
+    (provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : process.env.GEMINI_API_KEY) ??
+    ''
+  ).trim();
+
+  if (!apiKey) {
+    throw new IaAnalyzeServiceError(
+      `Missing API key for provider "${provider}"`,
+      500,
+      provider === 'openrouter' ? 'missing_openrouter_api_key' : 'missing_gemini_api_key',
+    );
+  }
+
+  return { provider, apiKey, model };
 }
 
 /**
@@ -103,6 +140,7 @@ type BatchOutcome =
  */
 export async function runIaAnalyzeService(
   request: IaAnalyzeRemoteRunRequest,
+  creds?: LlmCreds,
 ): Promise<IaAnalyzeRemoteRunResponse> {
   const batches = Array.isArray(request.batches) ? request.batches : [];
 
@@ -110,16 +148,11 @@ export async function runIaAnalyzeService(
     return { analyses: [], contexts: [] };
   }
 
-  const apiKey = String(process.env.GEMINI_API_KEY ?? '').trim();
-  if (!apiKey) {
-    throw new IaAnalyzeServiceError('Missing Gemini API key', 500, 'missing_gemini_api_key');
-  }
-
-  const iaApiClient = createIaApiClient(apiKey);
+  const iaApiClient = createProvider(resolveProviderConfig(creds));
   const analysesByFeedbackId = new Map<string, IaAnalyzeRemoteFeedbackAnalysis>();
   const contexts: IaAnalyzeContext[] = [];
 
-  const concurrency = readGeminiConcurrency();
+  const concurrency = readLlmConcurrency();
 
   const outcomes = await mapWithConcurrency(
     batches,
