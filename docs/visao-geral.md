@@ -2,7 +2,7 @@
 
 ## O Que É
 
-O `ia-analyze` é um **serviço Serverless independente** responsável por uma única coisa: receber lotes de feedbacks, chamar o **Google Gemini** e retornar análises estruturadas.
+O `ia-analyze` é um **serviço Serverless independente** responsável por uma única coisa: receber lotes de feedbacks, chamar o **provedor de LLM** (Gemini ou OpenRouter, configurável) e retornar análises estruturadas.
 
 Ele não tem banco de dados, não autentica usuários e não conhece a lógica de negócio do sistema. É um processador puro de texto.
 
@@ -11,7 +11,7 @@ Ele não tem banco de dados, não autentica usuários e não conhece a lógica d
 Separar a IA do API Gateway traz três vantagens práticas:
 
 1. **Escalabilidade independente** — o serviço de IA pode ser escalado (ou desligado) sem afetar o restante do sistema
-2. **Substituição de modelo** — trocar o provedor LLM exige mudança apenas neste serviço, sem tocar no Gateway
+2. **Substituição de modelo** — trocar de provedor/modelo LLM é **configuração** deste serviço (fábrica `createProvider`), sem tocar no Gateway
 3. **Isolamento de falhas** — uma falha no provedor LLM não derruba o Gateway inteiro
 
 ## Como Funciona
@@ -52,9 +52,10 @@ O valor deve ser idêntico ao configurado no API Gateway via variável de ambien
 
 - **Runtime:** Node.js 20+ com TypeScript (ESM)
 - **Framework:** Express
-- **Modelo de IA:** Google Gemini (`@google/genai`, modelo `gemini-2.5-flash` fixo no código), configurável via `GEMINI_API_KEY`. Trocar de provedor exige alteração de código (`gemini.provider.ts`) — não é fornecedor-agnóstico.
-- **Concorrência:** `IA_GEMINI_CONCURRENCY` (default `3`) limita quantas chamadas ao Gemini ficam em voo ao mesmo tempo por requisição, evitando estourar o rate limit do provedor (→ `429`).
-- **Resiliência:** `gemini.provider.ts` aplica retry com backoff exponencial e jitter (até 4 tentativas), repetindo apenas em status transitórios (`429`, `500`, `502`, `503`, `504`).
+- **Provedor de IA (configurável):** o motor depende de uma **porta** (`IaApiClient`), e uma **fábrica** (`providers/createProvider.ts`, padrão Strategy/Adapter) escolhe o adaptador em runtime — **Gemini** (`@google/genai`) ou **OpenRouter** (API compatível com OpenAI). Definido por `LLM_PROVIDER` (default `gemini`, sem regressão) + a chave do provedor (`GEMINI_API_KEY` / `OPENROUTER_API_KEY`). Cada empresa também pode trazer a **própria chave/modelo** por requisição (BYO-key, headers `x-llm-*`; ver [Arquitetura](./arquitetura-estrutura.md)).
+- **Modelo (configurável):** `LLM_MODEL` — cada provedor aplica o seu default quando ausente (`gemini-2.5-flash` / `openrouter/auto`).
+- **Concorrência:** `IA_LLM_CONCURRENCY` (default `3`; aceita o nome antigo `IA_GEMINI_CONCURRENCY`) limita quantas chamadas ao LLM ficam em voo ao mesmo tempo por requisição, evitando estourar o rate limit do provedor (→ `429`).
+- **Resiliência:** helpers compartilhados (`providers/shared/retry.ts`) aplicam retry com backoff exponencial e jitter (até 4 tentativas) nos **dois** adaptadores, repetindo apenas em status transitórios (`429`, `500`, `502`, `503`, `504`); cada provedor decide o que **não** retentar (no OpenRouter, `401`/`402`; no Gemini, a **cota diária** falha rápido).
 - **Testes:** Vitest
 - **Deploy:** Vercel (serverless)
 

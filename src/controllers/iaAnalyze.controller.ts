@@ -1,8 +1,33 @@
 import type { Request, Response } from 'express';
-import { IaAnalyzeServiceError, runIaAnalyzeService } from '../services/iaAnalyze.service.js';
+import {
+  IaAnalyzeServiceError,
+  runIaAnalyzeService,
+  type LlmCreds,
+} from '../services/iaAnalyze.service.js';
 import { isInternalRequestAuthorized } from '../utils/isInternalRequestAuthorized.js';
 import { isValidRemotePayload } from '../validations/iaAnalyze.validation.js';
 import type { IaAnalyzeRemoteRunResponse } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/remote.contract';
+
+/** Primeiro valor não-vazio de um header (Express pode dar string ou string[]). */
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const trimmed = raw?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/**
+ * Credenciais do LLM por requisição (Camada 2 / BYO-key): o gateway envia
+ * `x-llm-provider/x-llm-api-key/x-llm-model` (a chave da empresa). Ausentes ⇒
+ * `undefined` ⇒ o service cai na config do env (fallback global).
+ * IMPORTANTE: nunca logar esses headers (a chave é sensível).
+ */
+function readLlmCreds(req: Request): LlmCreds | undefined {
+  const provider = firstHeader(req.headers['x-llm-provider']);
+  const apiKey = firstHeader(req.headers['x-llm-api-key']);
+  const model = firstHeader(req.headers['x-llm-model']);
+  if (!provider && !apiKey && !model) return undefined;
+  return { provider, apiKey, model };
+}
 
 /**
  * Controller responsável por receber requisições de análise de feedbacks via IA.
@@ -31,7 +56,7 @@ export async function analyzeController(req: Request, res: Response) {
   }
 
   try {
-    const result = await runIaAnalyzeService(body);
+    const result = await runIaAnalyzeService(body, readLlmCreds(req));
 
     return res.status(200).json(result satisfies IaAnalyzeRemoteRunResponse);
   } catch (error) {
