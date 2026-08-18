@@ -20,11 +20,14 @@ O **CI** (lint/typecheck/unit) **não precisa de secret** — os testes são moc
 
 ## Env de runtime (no projeto Vercel, NÃO como GitHub secret)
 
-A chave do Gemini (`GEMINI_API_KEY`, usada pelo `@google/genai`) e o token
-interno (`IA_ANALYZE_INTERNAL_TOKEN`, autenticação do header `x-ia-analyze-token`
-entre o api-gateway e este serviço) são variáveis de ambiente configuradas nas
-**Settings do projeto Vercel** — não entram no CI. (Opcionais locais: `PORT`,
-`IA_GEMINI_CONCURRENCY`; ver `.env.example`.)
+O provedor de LLM (`LLM_PROVIDER` = `gemini`/`openrouter`, com a chave do provedor
+escolhido — `GEMINI_API_KEY` ou `OPENROUTER_API_KEY` — e opcionalmente `LLM_MODEL`)
+e o token interno (`IA_ANALYZE_INTERNAL_TOKEN`, autenticação do header
+`x-ia-analyze-token` entre o api-gateway e este serviço) são variáveis de ambiente
+configuradas nas **Settings do projeto Vercel** — não entram no CI. Cada empresa
+ainda pode sobrescrever provedor/chave/modelo por requisição (BYO-key, headers
+`x-llm-*`); o env é o **fallback global**. (Opcionais locais: `PORT`,
+`IA_LLM_CONCURRENCY`; ver `.env.example`.)
 
 ## Deploy
 
