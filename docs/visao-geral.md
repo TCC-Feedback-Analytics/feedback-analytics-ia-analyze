@@ -52,8 +52,8 @@ O valor deve ser idêntico ao configurado no API Gateway via variável de ambien
 
 - **Runtime:** Node.js 20+ com TypeScript (ESM)
 - **Framework:** Express
-- **Provedor de IA (configurável):** o motor depende de uma **porta** (`IaApiClient`), e uma **fábrica** (`providers/createProvider.ts`, padrão Strategy/Adapter) escolhe o adaptador em runtime — **Gemini** (`@google/genai`) ou **OpenRouter** (API compatível com OpenAI). Definido por `LLM_PROVIDER` (default `gemini`, sem regressão) + a chave do provedor (`GEMINI_API_KEY` / `OPENROUTER_API_KEY`). Cada empresa também pode trazer a **própria chave/modelo** por requisição (BYO-key, headers `x-llm-*`; ver [Arquitetura](./arquitetura-estrutura.md)).
-- **Modelo (configurável):** `LLM_MODEL` — cada provedor aplica o seu default quando ausente (`gemini-2.5-flash` / `openrouter/auto`).
+- **Provedor de IA por empresa:** o Gateway envia obrigatoriamente a chave e o modelo OpenRouter configurados no perfil pelos headers internos `x-llm-*`. A fábrica (`providers/createProvider.ts`, padrão Strategy/Adapter) mantém os adaptadores isolados, mas não há credencial LLM global no ambiente padrão.
+- **Modelo configurável:** vem do perfil da empresa; quando omitido, o OpenRouter usa `openrouter/auto`.
 - **Concorrência:** `IA_LLM_CONCURRENCY` (default `3`; aceita o nome antigo `IA_GEMINI_CONCURRENCY`) limita quantas chamadas ao LLM ficam em voo ao mesmo tempo por requisição, evitando estourar o rate limit do provedor (→ `429`).
 - **Resiliência:** helpers compartilhados (`providers/shared/retry.ts`) aplicam retry com backoff exponencial e jitter (até 4 tentativas) nos **dois** adaptadores, repetindo apenas em status transitórios (`429`, `500`, `502`, `503`, `504`); cada provedor decide o que **não** retentar (no OpenRouter, `401`/`402`; no Gemini, a **cota diária** falha rápido).
 - **Testes:** Vitest
