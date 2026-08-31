@@ -26,13 +26,11 @@ Copie `.env.example` para `.env` e preencha:
 
 | Variável | Obrigatória | Para quê |
 |---|---|---|
-| `LLM_PROVIDER` | não | Provedor default: `gemini` (default, sem regressão) ou `openrouter`. Por requisição, o header `x-llm-provider` tem prioridade (BYO-key) |
-| `GEMINI_API_KEY` | condicional | Chave do Gemini — obrigatória quando o provedor efetivo é `gemini` e a chave não vem por header |
-| `OPENROUTER_API_KEY` | condicional | Chave do OpenRouter — obrigatória quando o provedor efetivo é `openrouter` e a chave não vem por header. [openrouter.ai/keys](https://openrouter.ai/keys) |
-| `LLM_MODEL` | não | Id do modelo; cada provedor tem seu default (`gemini-2.5-flash` / `openrouter/auto`) |
 | `IA_ANALYZE_INTERNAL_TOKEN` | não | Token do header `x-ia-analyze-token`. **Se vazio, o endpoint fica aberto** (só para dev local); quando definido, deve ser idêntico ao configurado no API Gateway |
 | `PORT` | não | Porta local do Express (default `4100`; ignorada na Vercel) |
-| `IA_LLM_CONCURRENCY` | não | Máx. de chamadas simultâneas ao LLM por requisição (default `3`; evita rate limit 429). Aceita o nome antigo `IA_GEMINI_CONCURRENCY` |
+| `IA_LLM_CONCURRENCY` | não | Máx. de chamadas simultâneas ao LLM por requisição (default `3`; evita rate limit 429) |
+
+Provedor, modelo e chave não são configurações globais deste serviço no fluxo atual. O Gateway envia a configuração OpenRouter cifrada de cada empresa pelos headers internos `x-llm-*`.
 
 ## Rodar localmente
 
@@ -40,7 +38,7 @@ Este repositório **é** o serviço — os comandos rodam na raiz dele:
 
 ```bash
 npm install
-cp .env.example .env    # preencha a chave do provedor (GEMINI_API_KEY ou OPENROUTER_API_KEY)
+cp .env.example .env    # configure o token interno; as credenciais LLM vêm do Gateway
 npm run dev             # http://localhost:4100
 ```
 
