@@ -1,11 +1,15 @@
 import { GoogleGenAI } from '@google/genai';
 import { buildIaPromptByScope } from '../lib/iaAnalyzePromptBuilders.js';
+import { buildInsightsSynthesisPrompt } from '../lib/insightsSynthesisPromptBuilder.js';
+import { PT_BR_SYSTEM_INSTRUCTION } from '../lib/prompts/ptBrSystemInstruction.js';
 import { extractJsonFromText } from '../utils/extractJsonFromText.js';
+import { validateInsightsSynthesisResponse } from '../validations/insightsSynthesis.validation.js';
 import type {
   AiResponseShape,
   AnalyzeBatchWithIaParams,
   IaApiClient,
   ParsedIaResponse,
+  SynthesizeInsightsParams,
 } from '../../types/iaApiClient.types.js';
 import {
   IaApiClientError,
@@ -103,6 +107,51 @@ export function createIaApiClient(
 ): IaApiClient {
   const ai = new GoogleGenAI({ apiKey });
 
+  async function generateJson(prompt: string): Promise<unknown> {
+    let aiResponse: AiResponseShape;
+    try {
+      aiResponse = await runWithRetry(
+        () =>
+          ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+              systemInstruction: PT_BR_SYSTEM_INSTRUCTION,
+              thinkingConfig: { thinkingBudget: 0 },
+              temperature: 0.2,
+              maxOutputTokens: MAX_OUTPUT_TOKENS,
+            },
+          }) as Promise<AiResponseShape>,
+        { label: 'Gemini', isRetryable: isRetryableError, suggestedDelayMs: parseSuggestedDelayMs },
+      );
+    } catch (error) {
+      if (isDailyQuotaExceeded(error)) {
+        console.error(
+          `[ia-analyze] Gemini: cota DIÁRIA esgotada — falha rápida sem retry (retentar só queima mais cota). ${describeError(error)}`,
+        );
+      } else {
+        console.error(`[ia-analyze] Gemini falhou — motivo: ${describeError(error)}`);
+      }
+      throw new IaApiClientError(
+        `Failed to call model API (${describeError(error)})`,
+        'failed_ia_request',
+      );
+    }
+
+    const finishReason = aiResponse.candidates?.[0]?.finishReason;
+    if (finishReason === 'MAX_TOKENS') {
+      throw new IaApiClientError('AI response truncated (MAX_TOKENS)', 'invalid_ai_response');
+    }
+
+    const maybeText = aiResponse.text;
+    const rawText = (typeof maybeText === 'function' ? maybeText() : maybeText) ?? '';
+    try {
+      return JSON.parse(extractJsonFromText(rawText));
+    } catch {
+      throw new IaApiClientError('Invalid AI response JSON', 'invalid_ai_response');
+    }
+  }
+
   return {
     /**
      * Envia um batch ao modelo e devolve a resposta parseada em JSON. Retry/backoff
@@ -114,53 +163,14 @@ export function createIaApiClient(
         scopeType: params.scopeType,
         enterpriseContext: params.enterpriseContext,
         feedbacks: params.feedbacks,
+        languageRepair: params.languageRepair,
       });
-
-      let aiResponse: AiResponseShape;
-      try {
-        aiResponse = await runWithRetry(
-          () =>
-            ai.models.generateContent({
-              model,
-              contents: prompt,
-              config: {
-                thinkingConfig: { thinkingBudget: 0 },
-                maxOutputTokens: MAX_OUTPUT_TOKENS,
-              },
-            }) as Promise<AiResponseShape>,
-          { label: 'Gemini', isRetryable: isRetryableError, suggestedDelayMs: parseSuggestedDelayMs },
-        );
-      } catch (error) {
-        // Loga o motivo REAL antes de embrulhar no código tipado: distingue cota
-        // DIÁRIA (429/dia, não-retentável) de rate limit de curto prazo, overload
-        // (503) ou erro de requisição/credencial (4xx).
-        if (isDailyQuotaExceeded(error)) {
-          console.error(
-            `[ia-analyze] Gemini: cota DIÁRIA esgotada — falha rápida sem retry (retentar só queima mais cota). ${describeError(error)}`,
-          );
-        } else {
-          console.error(`[ia-analyze] Gemini falhou — motivo: ${describeError(error)}`);
-        }
-        throw new IaApiClientError(
-          `Failed to call model API (${describeError(error)})`,
-          'failed_ia_request',
-        );
-      }
-
-      // Saída cortada por limite de tokens => JSON incompleto. Não tentar parsear.
-      const finishReason = aiResponse.candidates?.[0]?.finishReason;
-      if (finishReason === 'MAX_TOKENS') {
-        throw new IaApiClientError('AI response truncated (MAX_TOKENS)', 'invalid_ai_response');
-      }
-
-      const maybeText = aiResponse.text;
-      const rawText = (typeof maybeText === 'function' ? maybeText() : maybeText) ?? '';
-
-      try {
-        return JSON.parse(extractJsonFromText(rawText)) as ParsedIaResponse;
-      } catch {
-        throw new IaApiClientError('Invalid AI response JSON', 'invalid_ai_response');
-      }
+      return await generateJson(prompt) as ParsedIaResponse;
+    },
+    async synthesizeInsights(params: SynthesizeInsightsParams) {
+      const parsed = await generateJson(buildInsightsSynthesisPrompt(params));
+      validateInsightsSynthesisResponse(parsed);
+      return parsed;
     },
   };
 }

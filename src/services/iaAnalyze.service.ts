@@ -1,4 +1,6 @@
-import { IaApiClientError } from '../providers/gemini.provider.js';
+import { IaApiClientError } from '../providers/shared/retry.js';
+import { validateIaBatchResponse } from '../validations/iaBatchResponse.validation.js';
+import { assertInsightsInPtBr } from '../validations/ptBrLanguage.validation.js';
 import { createProvider, type LlmProvider } from '../providers/createProvider.js';
 import { canProcessAnalyzedItem } from './sentimentAnalysis.service.js';
 import { extractKeywords } from './keywordExtraction.service.js';
@@ -20,7 +22,8 @@ import type {
   IaAnalyzeRemoteBatchInput,
 } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 import type { IaAnalyzeContext } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/analysis.contract';
-import type { ParsedIaResponse } from '../../types/iaApiClient.types.js';
+import type { AnalyzeBatchWithIaParams, IaApiClient, ParsedIaResponse, SynthesizeInsightsParams } from '../../types/iaApiClient.types.js';
+import type { IaInsightsSynthesisRequest, IaInsightsSynthesisResponse } from '../../types/insightsSynthesis.types.js';
 
 /**
  * Classe de erro customizada para o serviço de análise IA.
@@ -123,7 +126,71 @@ async function mapWithConcurrency<T, R>(
 type BatchOutcome =
   | { status: 'done'; batch: IaAnalyzeRemoteBatchInput; parsed: ParsedIaResponse }
   | { status: 'empty' }
+  | { status: 'skipped' }
   | { status: 'failed'; error: unknown };
+
+async function analyzeBatchWithLanguageRepair(
+  client: IaApiClient,
+  params: AnalyzeBatchWithIaParams,
+): Promise<ParsedIaResponse> {
+  const execute = async (languageRepair: boolean) => {
+    const parsed = await client.analyzeBatch({ ...params, languageRepair });
+    validateIaBatchResponse(parsed, params.feedbacks);
+    if (!parsed.global_insights) {
+      throw new IaApiClientError('AI response has no insights', 'invalid_ai_response_schema');
+    }
+    assertInsightsInPtBr(parsed.global_insights);
+    return parsed;
+  };
+
+  try {
+    return await execute(false);
+  } catch (error) {
+    if (!(error instanceof IaApiClientError) || error.code !== 'invalid_ai_response_language') throw error;
+    console.warn('[ia-analyze] idioma inválido no lote; executando uma correção pt-BR');
+    return execute(true);
+  }
+}
+
+async function synthesizeWithLanguageRepair(
+  client: IaApiClient,
+  params: SynthesizeInsightsParams,
+) {
+  const execute = async (languageRepair: boolean) => {
+    const insights = await client.synthesizeInsights({ ...params, languageRepair });
+    assertInsightsInPtBr(insights);
+    return insights;
+  };
+  try {
+    return await execute(false);
+  } catch (error) {
+    if (!(error instanceof IaApiClientError) || error.code !== 'invalid_ai_response_language') throw error;
+    console.warn('[ia-analyze] idioma inválido na síntese; executando uma correção pt-BR');
+    return execute(true);
+  }
+}
+
+/** Reduce final do relatório, separado da classificação dos feedbacks. */
+export async function runIaInsightsSynthesisService(
+  request: IaInsightsSynthesisRequest,
+  creds?: LlmCreds,
+): Promise<IaInsightsSynthesisResponse> {
+  const client = createProvider(resolveProviderConfig(creds));
+  try {
+    const globalInsights = await synthesizeWithLanguageRepair(client, {
+      scopeType: request.scope_type,
+      catalogItemId: request.catalog_item_id,
+      catalogItemName: request.catalog_item_name,
+      analyzedCount: request.analyzed_count,
+      enterpriseContext: request.enterprise_context,
+      partialInsights: request.partial_insights,
+    });
+    return { global_insights: globalInsights };
+  } catch (error) {
+    const code = error instanceof IaApiClientError ? error.code : 'failed_ia_request';
+    throw new IaAnalyzeServiceError('AI insights synthesis did not complete successfully', 502, code);
+  }
+}
 
 /**
  * Função principal que executa o fluxo de análise de feedbacks por IA.
@@ -135,8 +202,8 @@ type BatchOutcome =
  * - Monta o contexto de análise de cada lote.
  * - Retorna o resultado consolidado com todas as análises e contextos.
  *
- * É RESILIENTE: um lote que falha não derruba os demais (sucesso parcial). Só
- * lança erro se TODOS os lotes com conteúdo falharem.
+ * Só confirma sucesso quando TODOS os lotes e feedbacks forem válidos.
+ * Após uma falha, aguarda chamadas em voo e não inicia novos lotes.
  */
 export async function runIaAnalyzeService(
   request: IaAnalyzeRemoteRunRequest,
@@ -153,27 +220,30 @@ export async function runIaAnalyzeService(
   const contexts: IaAnalyzeContext[] = [];
 
   const concurrency = readLlmConcurrency();
+  let stopScheduling = false;
 
   const outcomes = await mapWithConcurrency(
     batches,
     concurrency,
-    async (batch): Promise<BatchOutcome> => {
+    async (batch, batchIndex): Promise<BatchOutcome> => {
       if (!Array.isArray(batch.feedbacks) || batch.feedbacks.length === 0) {
         return { status: 'empty' };
       }
+      if (stopScheduling) return { status: 'skipped' };
 
       try {
-        const parsed = await iaApiClient.analyzeBatch({
+        const parsed = await analyzeBatchWithLanguageRepair(iaApiClient, {
           scopeType: batch.scope_type,
           enterpriseContext: request.enterprise_context,
           feedbacks: batch.feedbacks,
         });
         return { status: 'done', batch, parsed };
       } catch (error) {
-        console.error(
-          `[ia-analyze] lote falhou (scope=${batch.scope_type}, item=${batch.catalog_item_id ?? 'null'}):`,
-          error,
-        );
+        stopScheduling = true;
+        console.error('[ia-analyze] lote falhou', {
+          batchIndex, feedbackCount: batch.feedbacks.length,
+          code: error instanceof IaApiClientError ? error.code : 'unexpected_error',
+        });
         return { status: 'failed', error };
       }
     },
@@ -189,25 +259,18 @@ export async function runIaAnalyzeService(
     (batch) => Array.isArray(batch.feedbacks) && batch.feedbacks.length > 0,
   ).length;
 
-  // Se TODOS os lotes com conteúdo falharam, propaga o erro (não devolve vazio
-  // silencioso). Se ao menos um deu certo, segue com sucesso PARCIAL: os lotes
-  // que falharam ficam de fora e podem ser reprocessados numa próxima execução.
-  if (nonEmptyBatchCount > 0 && succeeded.length === 0) {
+  // Um HTTP 200 parcial faria o Gateway/UI avançarem indevidamente ao relatório.
+  if (failed.length > 0) {
     const firstError = failed[0]?.error;
-    // Agrega os códigos de falha de TODOS os lotes antes de propagar: assim o log
-    // de produção distingue 'failed_ia_request' (Gemini 429/503/timeout) de
-    // 'invalid_ai_response' (MAX_TOKENS / JSON inválido) sem precisar reproduzir.
     const failureCodes = failed.map((outcome) =>
       outcome.error instanceof IaApiClientError ? outcome.error.code : 'unknown',
     );
     console.error(
-      `[ia-analyze] todos os ${nonEmptyBatchCount} lote(s) com conteúdo falharam — códigos: ${failureCodes.join(', ')}`,
+      `[ia-analyze] execução incompleta: total=${nonEmptyBatchCount} concluídos=${succeeded.length} falhos=${failed.length} — códigos: ${failureCodes.join(', ')}`,
     );
-
-    if (firstError instanceof IaApiClientError && firstError.code === 'failed_ia_request') {
-      throw new IaAnalyzeServiceError('Failed to call model API', 502, 'failed_ia_request');
-    }
-    throw new IaAnalyzeServiceError('Invalid AI response JSON', 502, 'invalid_ai_response');
+    const code = succeeded.length > 0 ? 'incomplete_ai_response'
+      : firstError instanceof IaApiClientError ? firstError.code : 'failed_ia_request';
+    throw new IaAnalyzeServiceError('AI analysis did not complete successfully', 502, code);
   }
 
   for (const result of succeeded) {

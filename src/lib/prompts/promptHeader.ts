@@ -19,6 +19,10 @@ Seu objetivo e:
 Regras IMPORTANTES:
 - Responda SEMPRE em JSON valido.
 - Nao inclua comentarios, texto fora do JSON ou explicacoes adicionais.
+- Escreva todo conteudo textual exclusivamente em portugues brasileiro (pt-BR), mesmo que um feedback esteja em outro idioma.
+- Preserve em ingles somente as chaves JSON e os valores tecnicos 'positive', 'neutral' e 'negative'.
+- Nao misture portugues com ingles ou espanhol em resumos, recomendacoes, categorias, palavras-chave ou aspectos.
+- Retorne exatamente um resultado para CADA feedback recebido, usando seu id original em feedback_id. Nao omita, repita ou invente ids.
 - Use apenas os valores 'positive', 'neutral' ou 'negative' em "sentiment".
 - Em "categories" e "keywords", use arrays de strings curtas (ex.: ["atendimento", "preco"]).
 - A fonte principal para categories/keywords e EXCLUSIVAMENTE o campo "message" do feedback.

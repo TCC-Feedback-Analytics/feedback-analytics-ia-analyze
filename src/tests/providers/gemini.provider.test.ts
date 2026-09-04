@@ -125,5 +125,9 @@ describe('[Unit] gemini.provider — analyzeBatch (retry/backoff)', () => {
 
     expect(result).toEqual({ feedbacks: [], global_insights: { summary: 'ok', recommendations: [] } });
     expect(mockGenerateContent).toHaveBeenCalledTimes(2);
+    expect(mockGenerateContent.mock.calls[1][0].config).toMatchObject({
+      systemInstruction: expect.stringContaining('português brasileiro'),
+      temperature: 0.2,
+    });
   });
 });

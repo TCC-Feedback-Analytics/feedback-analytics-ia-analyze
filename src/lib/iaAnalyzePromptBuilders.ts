@@ -1,4 +1,5 @@
 import { PROMPT_HEADER } from './prompts/promptHeader.js';
+import { PT_BR_REPAIR_INSTRUCTION } from './prompts/ptBrSystemInstruction.js';
 import { getScopeInstructions } from './prompts/scopeInstructions.js';
 import { getTaxonomyLabels } from './categoryTaxonomy.js';
 import type {
@@ -36,7 +37,7 @@ function capFeedbackMessage(message: string): string {
  * Retorna uma string pronta para ser usada na chamada à API do modelo.
  */
 export function buildIaPromptByScope(params: BuildIaPromptByScopeParams): string {
-  const { scopeType, enterpriseContext, feedbacks } = params;
+  const { scopeType, enterpriseContext, feedbacks, languageRepair = false } = params;
 
   const scopeInstructions = getScopeInstructions(scopeType);
 
@@ -92,6 +93,7 @@ export function buildIaPromptByScope(params: BuildIaPromptByScopeParams): string
   };
 
   return [
+    ...(languageRepair ? [PT_BR_REPAIR_INSTRUCTION, ''] : []),
     PROMPT_HEADER,
     '',
     `Escopo atual da analise: ${scopeType}`,

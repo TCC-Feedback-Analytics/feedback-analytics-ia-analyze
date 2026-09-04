@@ -135,7 +135,7 @@ O serviço deixou de ser preso ao Gemini. Duas peças novas, sem mexer no motor 
 **De onde vêm provedor/chave/modelo** (`resolveProviderConfig` no `iaAnalyze.service.ts`), em ordem de prioridade:
 
 1. **Por requisição (BYO-key):** headers `x-llm-provider` / `x-llm-api-key` / `x-llm-model`, enviados pelo API Gateway com a chave **decifrada** da empresa. O controller lê via `readLlmCreds(req)` e **nunca** loga esses headers (a chave é sensível).
-2. **Por ambiente (fallback global):** `LLM_PROVIDER` (default `gemini`), a chave do provedor (`GEMINI_API_KEY` / `OPENROUTER_API_KEY`) e `LLM_MODEL`.
+2. **Fallback global legado:** o código ainda reconhece `LLM_PROVIDER`, `GEMINI_API_KEY`/`OPENROUTER_API_KEY` e `LLM_MODEL` para compatibilidade, mas essas variáveis não fazem parte da configuração padrão. O Gateway exige a chave OpenRouter por empresa.
 
 Se nenhum dos dois trouxer chave para o provedor escolhido, o serviço responde `500` `missing_gemini_api_key` / `missing_openrouter_api_key`. Assim, a decisão "qual empresa usa qual chave" mora no **Gateway** (tabela cifrada `enterprise_ia_config`); o `ia-analyze` continua **stateless** — só recebe a credencial pronta e executa.
 

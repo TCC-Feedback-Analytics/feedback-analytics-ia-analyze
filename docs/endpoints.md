@@ -37,13 +37,13 @@ Content-Type: application/json
 
 > **Nota:** o token é **opcional**. Se `IA_ANALYZE_INTERNAL_TOKEN` não estiver definido no ambiente do serviço, todas as requisições são aceitas — comportamento intencional para desenvolvimento local.
 
-> **Credenciais do LLM (opcional, BYO-key).** O Gateway pode enviar o provedor/chave/modelo da empresa por header — fora do corpo e dos logs:
+> **Credenciais do LLM (obrigatórias, BYO-key).** O Gateway envia a chave/modelo OpenRouter da empresa por header — fora do corpo e dos logs:
 > ```
-> x-llm-provider: gemini | openrouter
+> x-llm-provider: openrouter
 > x-llm-api-key:  <chave da empresa>
 > x-llm-model:    <id do modelo>       # opcional
 > ```
-> Ausentes, o serviço usa a config do ambiente como **fallback global** (`LLM_PROVIDER` + `GEMINI_API_KEY`/`OPENROUTER_API_KEY` + `LLM_MODEL`).
+> No fluxo normal, o Gateway bloqueia a operação com `ia_config_required` antes de chamar este serviço quando a empresa ainda não configurou a chave.
 
 **Schema do Body**
 
@@ -209,7 +209,7 @@ Content-Type: application/json
 | Sintoma | Causa | Solução |
 |---|---|---|
 | `401` em toda requisição | Token interno errado | Iguale `IA_ANALYZE_INTERNAL_TOKEN` no Gateway e no IA Analyze |
-| `500 missing_gemini_api_key` / `missing_openrouter_api_key` | Chave do provedor ausente | Configure a chave do provedor escolhido (`GEMINI_API_KEY` ou `OPENROUTER_API_KEY`) no `.env`, ou envie-a por header `x-llm-api-key` (BYO-key) |
+| `500 missing_gemini_api_key` / `missing_openrouter_api_key` | Chave do provedor ausente em uma chamada interna direta | Garanta que o Gateway enviou `x-llm-provider`, `x-llm-api-key` e, opcionalmente, `x-llm-model` |
 | `502 failed_ia_request` | Provedor LLM inacessível | Verifique a chave de API e a conectividade com a internet. Só é propagado **após esgotar o retry/backoff** do provider (até 4 tentativas, com backoff exponencial + jitter e respeito ao delay sugerido — `retryDelay` do Gemini ou `Retry-After` do OpenRouter) |
 | `502 invalid_ai_response` | Modelo retornou JSON malformado **ou** saída truncada (`finishReason=MAX_TOKENS`) | Tente novamente; pode ser instabilidade do modelo. Se for truncamento recorrente, reduza o tamanho dos lotes na configuração do **API Gateway** (variável `IA_MAX_FEEDBACKS_PER_BATCH` **do Gateway** — o fatiamento de lotes acontece lá, não neste serviço) |
 | Analyses vazias (`analyses: []`) | O modelo não retornou sentimento válido para nenhum feedback (ou todos os lotes com conteúdo falharam) | Reenvie; confira que os feedbacks têm `message` significativa (a `message` é a fonte exclusiva de categorias/keywords) e cheque os logs por `failureCodes` (`failed_ia_request` vs `invalid_ai_response`) |
