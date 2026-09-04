@@ -1,10 +1,11 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../../index.js';
-import { runIaAnalyzeService, IaAnalyzeServiceError } from '../../services/iaAnalyze.service.js';
+import { runIaAnalyzeService, runIaInsightsSynthesisService, IaAnalyzeServiceError } from '../../services/iaAnalyze.service.js';
 
 vi.mock('../../services/iaAnalyze.service.js', () => ({
   runIaAnalyzeService: vi.fn(),
+  runIaInsightsSynthesisService: vi.fn(),
   IaAnalyzeServiceError: class IaAnalyzeServiceError extends Error {
     public statusCode: number;
     public code: string;
@@ -17,6 +18,7 @@ vi.mock('../../services/iaAnalyze.service.js', () => ({
 }));
 
 const mockRunService = vi.mocked(runIaAnalyzeService);
+const mockSynthesisService = vi.mocked(runIaInsightsSynthesisService);
 
 const INTERNAL_TOKEN = 'test-internal-token';
 
@@ -166,5 +168,27 @@ describe('[Integração] POST /internal/ia-analyze/analyze', () => {
 
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('internal_server_error');
+  });
+});
+
+describe('[Integração] POST /internal/ia-analyze/synthesize-insights', () => {
+  it('exige autenticação interna', async () => {
+    expect((await request(app).post('/internal/ia-analyze/synthesize-insights').send({})).status).toBe(401);
+  });
+
+  it('valida o payload e retorna o insight final', async () => {
+    mockSynthesisService.mockResolvedValueOnce({
+      global_insights: { summary: 'Resumo final.', recommendations: ['Ação final.'] },
+    });
+    const res = await request(app).post('/internal/ia-analyze/synthesize-insights')
+      .set('x-ia-analyze-token', INTERNAL_TOKEN)
+      .send({
+        enterprise_context: VALID_PAYLOAD.enterprise_context,
+        scope_type: 'COMPANY', catalog_item_id: null, catalog_item_name: null,
+        analyzed_count: 1,
+        partial_insights: [{ summary: 'Resumo parcial.', recommendations: ['Ação parcial.'] }],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.global_insights.summary).toBe('Resumo final.');
   });
 });

@@ -1,4 +1,7 @@
-import { createIaApiClient, IaApiClientError } from '../providers/gemini.provider.js';
+import { IaApiClientError } from '../providers/shared/retry.js';
+import { validateIaBatchResponse } from '../validations/iaBatchResponse.validation.js';
+import { assertInsightsInPtBr } from '../validations/ptBrLanguage.validation.js';
+import { createProvider, type LlmProvider } from '../providers/createProvider.js';
 import { canProcessAnalyzedItem } from './sentimentAnalysis.service.js';
 import { extractKeywords } from './keywordExtraction.service.js';
 import { extractCategories } from './categorization.service.js';
@@ -19,7 +22,8 @@ import type {
   IaAnalyzeRemoteBatchInput,
 } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 import type { IaAnalyzeContext } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/analysis.contract';
-import type { ParsedIaResponse } from '../../types/iaApiClient.types.js';
+import type { AnalyzeBatchWithIaParams, IaApiClient, ParsedIaResponse, SynthesizeInsightsParams } from '../../types/iaApiClient.types.js';
+import type { IaInsightsSynthesisRequest, IaInsightsSynthesisResponse } from '../../types/insightsSynthesis.types.js';
 
 /**
  * Classe de erro customizada para o serviço de análise IA.
@@ -39,19 +43,55 @@ export class IaAnalyzeServiceError extends Error {
   }
 }
 
-const DEFAULT_GEMINI_CONCURRENCY = 3;
+const DEFAULT_LLM_CONCURRENCY = 3;
 
 /**
- * Quantas chamadas ao Gemini podem estar em voo ao mesmo tempo (configurável via
- * IA_GEMINI_CONCURRENCY). Com os lotes fatiados por tamanho, o número de chamadas
- * cresce — limitar a concorrência evita estourar o rate limit do Gemini (→ 429).
+ * Quantas chamadas ao LLM podem estar em voo ao mesmo tempo (configurável via
+ * IA_LLM_CONCURRENCY; aceita IA_GEMINI_CONCURRENCY por compatibilidade). Limitar
+ * a concorrência evita estourar o rate limit do provedor (→ 429).
  */
-function readGeminiConcurrency(): number {
-  const parsed = Number(String(process.env.IA_GEMINI_CONCURRENCY ?? '').trim());
+function readLlmConcurrency(): number {
+  const raw = process.env.IA_LLM_CONCURRENCY ?? process.env.IA_GEMINI_CONCURRENCY ?? '';
+  const parsed = Number(String(raw).trim());
   if (Number.isFinite(parsed) && parsed > 0) {
     return Math.floor(parsed);
   }
-  return DEFAULT_GEMINI_CONCURRENCY;
+  return DEFAULT_LLM_CONCURRENCY;
+}
+
+/** Credenciais/modelo do provedor, vindas por requisição (Camada 2 / BYO-key) ou do env. */
+export type LlmCreds = { provider?: string; apiKey?: string; model?: string };
+
+/**
+ * Resolve provedor/chave/modelo. Prioriza o `override` (headers, na Camada 2) e
+ * cai no env: `LLM_PROVIDER` (default `gemini`, para uma transição sem regressão),
+ * `LLM_MODEL`, e a chave do provedor escolhido (`OPENROUTER_API_KEY`/`GEMINI_API_KEY`).
+ */
+function resolveProviderConfig(override?: LlmCreds): {
+  provider: LlmProvider;
+  apiKey: string;
+  model?: string;
+} {
+  const providerRaw = (override?.provider ?? process.env.LLM_PROVIDER ?? 'gemini')
+    .trim()
+    .toLowerCase();
+  const provider: LlmProvider = providerRaw === 'openrouter' ? 'openrouter' : 'gemini';
+  const model = (override?.model ?? process.env.LLM_MODEL ?? '').trim() || undefined;
+  const apiKey = (
+    override?.apiKey ??
+    (provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : process.env.GEMINI_API_KEY) ??
+    ''
+  ).trim();
+
+  if (!apiKey) {
+    throw new IaAnalyzeServiceError(
+      `Missing API key for provider "${provider}"`,
+      500,
+      provider === 'openrouter' ? 'missing_openrouter_api_key' : 'missing_gemini_api_key',
+    );
+  }
+
+  return { provider, apiKey, model };
 }
 
 /**
@@ -86,7 +126,71 @@ async function mapWithConcurrency<T, R>(
 type BatchOutcome =
   | { status: 'done'; batch: IaAnalyzeRemoteBatchInput; parsed: ParsedIaResponse }
   | { status: 'empty' }
+  | { status: 'skipped' }
   | { status: 'failed'; error: unknown };
+
+async function analyzeBatchWithLanguageRepair(
+  client: IaApiClient,
+  params: AnalyzeBatchWithIaParams,
+): Promise<ParsedIaResponse> {
+  const execute = async (languageRepair: boolean) => {
+    const parsed = await client.analyzeBatch({ ...params, languageRepair });
+    validateIaBatchResponse(parsed, params.feedbacks);
+    if (!parsed.global_insights) {
+      throw new IaApiClientError('AI response has no insights', 'invalid_ai_response_schema');
+    }
+    assertInsightsInPtBr(parsed.global_insights);
+    return parsed;
+  };
+
+  try {
+    return await execute(false);
+  } catch (error) {
+    if (!(error instanceof IaApiClientError) || error.code !== 'invalid_ai_response_language') throw error;
+    console.warn('[ia-analyze] idioma inválido no lote; executando uma correção pt-BR');
+    return execute(true);
+  }
+}
+
+async function synthesizeWithLanguageRepair(
+  client: IaApiClient,
+  params: SynthesizeInsightsParams,
+) {
+  const execute = async (languageRepair: boolean) => {
+    const insights = await client.synthesizeInsights({ ...params, languageRepair });
+    assertInsightsInPtBr(insights);
+    return insights;
+  };
+  try {
+    return await execute(false);
+  } catch (error) {
+    if (!(error instanceof IaApiClientError) || error.code !== 'invalid_ai_response_language') throw error;
+    console.warn('[ia-analyze] idioma inválido na síntese; executando uma correção pt-BR');
+    return execute(true);
+  }
+}
+
+/** Reduce final do relatório, separado da classificação dos feedbacks. */
+export async function runIaInsightsSynthesisService(
+  request: IaInsightsSynthesisRequest,
+  creds?: LlmCreds,
+): Promise<IaInsightsSynthesisResponse> {
+  const client = createProvider(resolveProviderConfig(creds));
+  try {
+    const globalInsights = await synthesizeWithLanguageRepair(client, {
+      scopeType: request.scope_type,
+      catalogItemId: request.catalog_item_id,
+      catalogItemName: request.catalog_item_name,
+      analyzedCount: request.analyzed_count,
+      enterpriseContext: request.enterprise_context,
+      partialInsights: request.partial_insights,
+    });
+    return { global_insights: globalInsights };
+  } catch (error) {
+    const code = error instanceof IaApiClientError ? error.code : 'failed_ia_request';
+    throw new IaAnalyzeServiceError('AI insights synthesis did not complete successfully', 502, code);
+  }
+}
 
 /**
  * Função principal que executa o fluxo de análise de feedbacks por IA.
@@ -98,11 +202,12 @@ type BatchOutcome =
  * - Monta o contexto de análise de cada lote.
  * - Retorna o resultado consolidado com todas as análises e contextos.
  *
- * É RESILIENTE: um lote que falha não derruba os demais (sucesso parcial). Só
- * lança erro se TODOS os lotes com conteúdo falharem.
+ * Só confirma sucesso quando TODOS os lotes e feedbacks forem válidos.
+ * Após uma falha, aguarda chamadas em voo e não inicia novos lotes.
  */
 export async function runIaAnalyzeService(
   request: IaAnalyzeRemoteRunRequest,
+  creds?: LlmCreds,
 ): Promise<IaAnalyzeRemoteRunResponse> {
   const batches = Array.isArray(request.batches) ? request.batches : [];
 
@@ -110,37 +215,35 @@ export async function runIaAnalyzeService(
     return { analyses: [], contexts: [] };
   }
 
-  const apiKey = String(process.env.GEMINI_API_KEY ?? '').trim();
-  if (!apiKey) {
-    throw new IaAnalyzeServiceError('Missing Gemini API key', 500, 'missing_gemini_api_key');
-  }
-
-  const iaApiClient = createIaApiClient(apiKey);
+  const iaApiClient = createProvider(resolveProviderConfig(creds));
   const analysesByFeedbackId = new Map<string, IaAnalyzeRemoteFeedbackAnalysis>();
   const contexts: IaAnalyzeContext[] = [];
 
-  const concurrency = readGeminiConcurrency();
+  const concurrency = readLlmConcurrency();
+  let stopScheduling = false;
 
   const outcomes = await mapWithConcurrency(
     batches,
     concurrency,
-    async (batch): Promise<BatchOutcome> => {
+    async (batch, batchIndex): Promise<BatchOutcome> => {
       if (!Array.isArray(batch.feedbacks) || batch.feedbacks.length === 0) {
         return { status: 'empty' };
       }
+      if (stopScheduling) return { status: 'skipped' };
 
       try {
-        const parsed = await iaApiClient.analyzeBatch({
+        const parsed = await analyzeBatchWithLanguageRepair(iaApiClient, {
           scopeType: batch.scope_type,
           enterpriseContext: request.enterprise_context,
           feedbacks: batch.feedbacks,
         });
         return { status: 'done', batch, parsed };
       } catch (error) {
-        console.error(
-          `[ia-analyze] lote falhou (scope=${batch.scope_type}, item=${batch.catalog_item_id ?? 'null'}):`,
-          error,
-        );
+        stopScheduling = true;
+        console.error('[ia-analyze] lote falhou', {
+          batchIndex, feedbackCount: batch.feedbacks.length,
+          code: error instanceof IaApiClientError ? error.code : 'unexpected_error',
+        });
         return { status: 'failed', error };
       }
     },
@@ -156,25 +259,18 @@ export async function runIaAnalyzeService(
     (batch) => Array.isArray(batch.feedbacks) && batch.feedbacks.length > 0,
   ).length;
 
-  // Se TODOS os lotes com conteúdo falharam, propaga o erro (não devolve vazio
-  // silencioso). Se ao menos um deu certo, segue com sucesso PARCIAL: os lotes
-  // que falharam ficam de fora e podem ser reprocessados numa próxima execução.
-  if (nonEmptyBatchCount > 0 && succeeded.length === 0) {
+  // Um HTTP 200 parcial faria o Gateway/UI avançarem indevidamente ao relatório.
+  if (failed.length > 0) {
     const firstError = failed[0]?.error;
-    // Agrega os códigos de falha de TODOS os lotes antes de propagar: assim o log
-    // de produção distingue 'failed_ia_request' (Gemini 429/503/timeout) de
-    // 'invalid_ai_response' (MAX_TOKENS / JSON inválido) sem precisar reproduzir.
     const failureCodes = failed.map((outcome) =>
       outcome.error instanceof IaApiClientError ? outcome.error.code : 'unknown',
     );
     console.error(
-      `[ia-analyze] todos os ${nonEmptyBatchCount} lote(s) com conteúdo falharam — códigos: ${failureCodes.join(', ')}`,
+      `[ia-analyze] execução incompleta: total=${nonEmptyBatchCount} concluídos=${succeeded.length} falhos=${failed.length} — códigos: ${failureCodes.join(', ')}`,
     );
-
-    if (firstError instanceof IaApiClientError && firstError.code === 'failed_ia_request') {
-      throw new IaAnalyzeServiceError('Failed to call model API', 502, 'failed_ia_request');
-    }
-    throw new IaAnalyzeServiceError('Invalid AI response JSON', 502, 'invalid_ai_response');
+    const code = succeeded.length > 0 ? 'incomplete_ai_response'
+      : firstError instanceof IaApiClientError ? firstError.code : 'failed_ia_request';
+    throw new IaAnalyzeServiceError('AI analysis did not complete successfully', 502, code);
   }
 
   for (const result of succeeded) {

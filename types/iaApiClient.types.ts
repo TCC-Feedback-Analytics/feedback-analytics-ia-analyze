@@ -15,7 +15,13 @@ import type { IaAnalyzeRemoteFeedbackAnalysis } from '@feedback/lib-shared/inter
  * Codigos de erro previstos na comunicacao com o provedor de IA.
  * Serve para padronizar tratamento de falhas no engine.
  */
-export type IaApiClientErrorCode = 'failed_ia_request' | 'invalid_ai_response';
+export type IaApiClientErrorCode =
+  | 'failed_ia_request' | 'invalid_ai_response' | 'invalid_ai_response_schema'
+  | 'invalid_ai_response_language'
+  | 'invalid_provider_response' | 'empty_ai_response' | 'truncated_ai_response'
+  | 'incomplete_ai_response' | 'ai_response_refused' | 'ia_provider_error'
+  | 'ia_provider_auth_error' | 'ia_provider_credits_exhausted'
+  | 'ia_provider_rate_limited' | 'ia_provider_unavailable';
 
 /**
  * Shape parseado da resposta da IA apos extracao de JSON.
@@ -34,6 +40,17 @@ export type AnalyzeBatchWithIaParams = {
   scopeType: IaAnalyzeScopeType;
   enterpriseContext: IaAnalyzeEnterpriseContext;
   feedbacks: IaAnalyzeFeedbackInput[];
+  languageRepair?: boolean;
+};
+
+export type SynthesizeInsightsParams = {
+  scopeType: IaAnalyzeScopeType;
+  catalogItemId: string | null;
+  catalogItemName: string | null;
+  analyzedCount: number;
+  enterpriseContext: IaAnalyzeEnterpriseContext;
+  partialInsights: IaAnalyzeInsights[];
+  languageRepair?: boolean;
 };
 
 /**
@@ -42,6 +59,7 @@ export type AnalyzeBatchWithIaParams = {
  */
 export type IaApiClient = {
   analyzeBatch: (params: AnalyzeBatchWithIaParams) => Promise<ParsedIaResponse>;
+  synthesizeInsights: (params: SynthesizeInsightsParams) => Promise<IaAnalyzeInsights>;
 };
 
 /**

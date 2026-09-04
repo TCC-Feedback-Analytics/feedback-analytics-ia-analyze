@@ -12,7 +12,7 @@ O processamento ocorre de forma sequencial através das camadas do sistema, gara
 1. **Rotas (`routes/`):** Recebem o lote de feedbacks enviado pelo API Gateway e direcionam para o controlador.
 2. **Controllers (`controllers/`):** Validam a autorização interna (garantindo que a requisição veio do Gateway) e a estrutura do payload recebido.
 3. **Service Principal (`services/iaAnalyze.service.ts`):** Orquestra o processo. Combina os feedbacks com as regras e o contexto de negócio da empresa.
-4. **Providers (`providers/gemini.provider.ts`):** Prepara o prompt final e chama o Google Gemini (SDK `@google/genai`, modelo `gemini-2.5-flash`). O provider é específico do Gemini: trocar de provedor exige alterar este arquivo — o serviço não é fornecedor-agnóstico.
+4. **Providers (`providers/`):** Uma **fábrica** (`createProvider.ts`) devolve o adaptador do provedor escolhido — **Gemini** (`gemini.provider.ts`, SDK `@google/genai`) ou **OpenRouter** (`openrouter.provider.ts`, API compatível com OpenAI). Ambos implementam a mesma **porta** `IaApiClient` (padrão Strategy/Adapter), preparam o prompt final e chamam a API do LLM. O motor **não sabe** qual provedor está atrás — trocar é configuração, não alteração de código.
 
 ### Fluxo de Volta (Processando a resposta)
 5. O **Provider** recebe a resposta bruta da Inteligência Artificial (que está sujeita a "alucinações" ou fuga do formato).
@@ -108,18 +108,36 @@ Extrai aspectos (Aspect-Based Sentiment Analysis) do que o modelo devolveu, reus
 
 ## Resiliência do Orquestrador (`iaAnalyze.service.ts`)
 
-Como os lotes passaram a ser fatiados por tamanho no gateway, o número de chamadas ao Gemini cresce. O orquestrador foi endurecido em duas frentes:
+Como os lotes passaram a ser fatiados por tamanho no gateway, o número de chamadas ao LLM cresce. O orquestrador foi endurecido em duas frentes:
 
-- **Concorrência limitada:** `mapWithConcurrency` (semáforo simples que preserva a ordem dos resultados) substitui o `Promise.all` sem limite. O teto de chamadas em voo vem de `IA_GEMINI_CONCURRENCY` (default **3**), evitando estourar o rate limit do Gemini.
+- **Concorrência limitada:** `mapWithConcurrency` (semáforo simples que preserva a ordem dos resultados) substitui o `Promise.all` sem limite. O teto de chamadas em voo vem de `IA_LLM_CONCURRENCY` (default **3**; aceita o nome antigo `IA_GEMINI_CONCURRENCY`), evitando estourar o rate limit do provedor.
 - **Sucesso PARCIAL por lote:** um lote que falha **não derruba os demais**. O serviço só propaga erro quando **todos** os lotes com conteúdo falham; nesse caso agrega os códigos de falha no log e relança `failed_ia_request` (se a primeira falha foi de requisição) ou `invalid_ai_response`. Se ao menos um lote dá certo, os que falharam ficam de fora e podem ser reprocessados numa próxima execução.
 
 ---
 
-## Resiliência do Provider (`gemini.provider.ts`)
+## Resiliência dos Providers (`providers/shared/retry.ts`)
 
-- **Retry/backoff exponencial com jitter:** até `MAX_ATTEMPTS = 4` tentativas para falhas transitórias (status `429`, `500`, `502`, `503`, `504`). O atraso é exponencial com jitter (limitado a 20s) e **honra o `retryDelay`** sugerido pelo Gemini quando presente. Falhas não-transitórias (`400`, `401`, `404`) não são retentadas.
-- **Teto de saída:** `maxOutputTokens = 16384` por chamada — folgado, abaixo do máximo do modelo (65.536), servindo de trava já que os lotes vêm fatiados por tamanho.
-- **Saída truncada:** quando o `finishReason` do candidato é `MAX_TOKENS`, o JSON está incompleto; o provider **não tenta parsear** e lança `invalid_ai_response`.
+O retry/erro é **compartilhado** pelos dois adaptadores (Gemini e OpenRouter) num único módulo; o que é específico de cada provedor — o que conta como transitório e o delay sugerido — entra por parâmetro em `runWithRetry`.
+
+- **Retry/backoff exponencial com jitter:** até `MAX_ATTEMPTS = 4` tentativas para falhas transitórias (status `429`, `500`, `502`, `503`, `504`). O atraso é exponencial com jitter (limitado a 20s) e **honra o delay sugerido** pelo provedor quando presente — o `retryDelay` do Gemini ou o header `Retry-After` do OpenRouter. Cada provedor decide o que **não** retentar: no Gemini, a **cota diária** esgotada falha rápido (retentar só queima mais cota); no OpenRouter, `401` (chave inválida) e `402` (sem créditos) não são retentados.
+- **Teto de saída:** `maxOutputTokens` / `max_tokens = 16384` por chamada — folgado, abaixo do máximo do modelo, servindo de trava já que os lotes vêm fatiados por tamanho.
+- **Saída truncada:** quando a saída é cortada por limite de tokens (Gemini `finishReason = MAX_TOKENS`; OpenRouter `finish_reason = 'length'`), o JSON está incompleto; o provider **não tenta parsear** e lança `invalid_ai_response`.
+
+---
+
+## Provedor de LLM Configurável / BYO-key (etapa 04)
+
+O serviço deixou de ser preso ao Gemini. Duas peças novas, sem mexer no motor de análise:
+
+- **Fábrica (`providers/createProvider.ts`):** recebe `{ provider, apiKey, model }` e devolve o adaptador certo (`gemini` | `openrouter`), ambos por trás da porta `IaApiClient`. Adicionar um provedor novo é escrever mais um adaptador — o orquestrador não muda.
+- **Adaptador OpenRouter (`providers/openrouter.provider.ts`):** fala a API compatível com OpenAI (`POST /chat/completions`), reusando o **mesmo** builder de prompt e parser de JSON do Gemini. Default de modelo: `openrouter/auto` (roteamento automático).
+
+**De onde vêm provedor/chave/modelo** (`resolveProviderConfig` no `iaAnalyze.service.ts`), em ordem de prioridade:
+
+1. **Por requisição (BYO-key):** headers `x-llm-provider` / `x-llm-api-key` / `x-llm-model`, enviados pelo API Gateway com a chave **decifrada** da empresa. O controller lê via `readLlmCreds(req)` e **nunca** loga esses headers (a chave é sensível).
+2. **Fallback global legado:** o código ainda reconhece `LLM_PROVIDER`, `GEMINI_API_KEY`/`OPENROUTER_API_KEY` e `LLM_MODEL` para compatibilidade, mas essas variáveis não fazem parte da configuração padrão. O Gateway exige a chave OpenRouter por empresa.
+
+Se nenhum dos dois trouxer chave para o provedor escolhido, o serviço responde `500` `missing_gemini_api_key` / `missing_openrouter_api_key`. Assim, a decisão "qual empresa usa qual chave" mora no **Gateway** (tabela cifrada `enterprise_ia_config`); o `ia-analyze` continua **stateless** — só recebe a credencial pronta e executa.
 
 ---
 
@@ -130,7 +148,7 @@ feedback-analytics-ia-analyze/
 ├── src/
 │   ├── index.ts                            → Entry point do servidor Express
 │   ├── controllers/
-│   │   └── iaAnalyze.controller.ts         → Token + payload + resposta HTTP
+│   │   └── iaAnalyze.controller.ts         → Token + payload + creds x-llm-* (BYO-key) + resposta HTTP
 │   ├── services/
 │   │   ├── iaAnalyze.service.ts            → Orquestrador principal
 │   │   ├── sentimentAnalysis.service.ts    → Validação de sentimentos
@@ -139,7 +157,11 @@ feedback-analytics-ia-analyze/
 │   │   ├── aspectExtraction.service.ts     → Extração de aspectos (ABSA) ancorada no message
 │   │   └── globalInsights.service.ts       → Contexto por batch
 │   ├── providers/
-│   │   └── gemini.provider.ts              → Cliente do provedor LLM via SDK @google/genai + analyzeBatch
+│   │   ├── createProvider.ts               → Fábrica (Strategy): escolhe o adaptador por config
+│   │   ├── gemini.provider.ts              → Adaptador Gemini (SDK @google/genai) + analyzeBatch
+│   │   ├── openrouter.provider.ts          → Adaptador OpenRouter (API compatível com OpenAI)
+│   │   └── shared/
+│   │       └── retry.ts                    → Retry/backoff + IaApiClientError compartilhados
 │   ├── routes/
 │   │   └── iaAnalyze.routes.ts             → /health + /ia-analyze/health + /ia-analyze/analyze (sob /internal)
 │   ├── lib/
@@ -170,7 +192,8 @@ feedback-analytics-ia-analyze/
     │   ├── analyze.test.ts
     │   └── health.test.ts
     ├── providers/
-    │   └── gemini.provider.test.ts
+    │   ├── gemini.provider.test.ts
+    │   └── openrouter.provider.test.ts
     └── services/
         ├── sentiment.test.ts
         └── aspectExtraction.test.ts
