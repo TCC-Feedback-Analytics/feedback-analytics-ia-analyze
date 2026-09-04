@@ -17,6 +17,8 @@ export type BuildIaPromptByScopeParams = {
   scopeType: IaAnalyzeScopeType;
   enterpriseContext: IaAnalyzeEnterpriseContext;
   feedbacks: IaAnalyzeFeedbackInput[];
+  /** Segunda tentativa após a validação detectar conteúdo fora de pt-BR. */
+  languageRepair?: boolean;
 };
 
 /**
