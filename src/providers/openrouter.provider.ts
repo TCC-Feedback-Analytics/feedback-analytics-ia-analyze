@@ -1,137 +1,147 @@
 import { buildIaPromptByScope } from '../lib/iaAnalyzePromptBuilders.js';
+import { buildInsightsSynthesisPrompt } from '../lib/insightsSynthesisPromptBuilder.js';
+import { PT_BR_SYSTEM_INSTRUCTION } from '../lib/prompts/ptBrSystemInstruction.js';
 import { extractJsonFromText } from '../utils/extractJsonFromText.js';
-import type {
-  AnalyzeBatchWithIaParams,
-  IaApiClient,
-  ParsedIaResponse,
-} from '../../types/iaApiClient.types.js';
-import {
-  IaApiClientError,
-  RETRYABLE_STATUS,
-  describeError,
-  getErrorStatus,
-  runWithRetry,
-} from './shared/retry.js';
+import { validateIaBatchResponse } from '../validations/iaBatchResponse.validation.js';
+import { validateInsightsSynthesisResponse } from '../validations/insightsSynthesis.validation.js';
+import type { AnalyzeBatchWithIaParams, IaApiClient, IaApiClientErrorCode, ParsedIaResponse, SynthesizeInsightsParams } from '../../types/iaApiClient.types.js';
+import { IaApiClientError, RETRYABLE_STATUS, runWithRetry } from './shared/retry.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_OUTPUT_TOKENS = 16_384;
-/** Modelo padrão quando `LLM_MODEL` não é informado — roteamento automático do OpenRouter. */
 const DEFAULT_OPENROUTER_MODEL = 'openrouter/auto';
 
-/** Erro HTTP do OpenRouter, carregando status e o Retry-After sugerido. */
-class OpenRouterHttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    public retryAfterMs: number | null,
-  ) {
-    super(message);
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function providerCode(status: number): IaApiClientErrorCode {
+  if (status === 401) return 'ia_provider_auth_error';
+  if (status === 402) return 'ia_provider_credits_exhausted';
+  if (status === 429) return 'ia_provider_rate_limited';
+  if ([404, 502, 503, 504].includes(status)) return 'ia_provider_unavailable';
+  return 'ia_provider_error';
+}
+
+/** Nunca inclui mensagem/raw/metadata do provedor: podem ecoar chave ou prompt. */
+class OpenRouterHttpError extends IaApiClientError {
+  constructor(public status: number, public retryAfterMs: number | null) {
+    super(`OpenRouter provider error (status=${status})`, providerCode(status));
   }
 }
 
-/**
- * Retentável = mesmos status transitórios do padrão HTTP. **402 (sem créditos) e
- * 401 (chave inválida) NÃO são retentáveis** — retentar não resolve e só atrasa o
- * erro claro para o usuário (equivalente à "cota diária" do Gemini).
- */
-function isRetryableOpenRouter(error: unknown): boolean {
-  const status = getErrorStatus(error);
-  if (status === 401 || status === 402) return false;
-  if (status !== null) return RETRYABLE_STATUS.has(status);
-  return false;
-}
-
-function suggestedDelayFromRetryAfter(error: unknown): number | null {
-  return error instanceof OpenRouterHttpError ? error.retryAfterMs : null;
-}
-
-/** Converte o header `Retry-After` (segundos) em ms; ignora o formato de data HTTP. */
 function parseRetryAfterMs(header: string | null): number | null {
   if (!header) return null;
   const seconds = Number(header.trim());
-  return Number.isFinite(seconds) ? Math.ceil(seconds * 1_000) : null;
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds * 1_000) : null;
 }
 
-type OpenRouterResponse = {
-  choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
-};
+function errorStatus(error: unknown): number {
+  const code = isObject(error) ? error.code : undefined;
+  const status = typeof code === 'number' || (typeof code === 'string' && /^\d{3}$/.test(code)) ? Number(code) : NaN;
+  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 502;
+}
 
-/**
- * Adaptador do OpenRouter (API compatível com OpenAI: `/chat/completions`).
- * Implementa o MESMO contrato `IaApiClient` do Gemini, reusando o builder de
- * prompt e o parser de JSON — o motor de análise não sabe qual provedor está atrás.
- */
+/** Metadados permitidos nos logs; nunca inclui resposta, raciocínio ou credenciais. */
+function safeLabel(value: unknown): string {
+  return typeof value === 'string' && /^[a-zA-Z0-9._:/-]{1,120}$/.test(value) && !value.startsWith('sk-') ? value : 'unknown';
+}
+
 export function createOpenRouterClient(params: { apiKey: string; model?: string }): IaApiClient {
   const model = params.model?.trim() || DEFAULT_OPENROUTER_MODEL;
-
-  return {
-    async analyzeBatch(batchParams: AnalyzeBatchWithIaParams): Promise<ParsedIaResponse> {
-      const prompt = buildIaPromptByScope({
-        scopeType: batchParams.scopeType,
-        enterpriseContext: batchParams.enterpriseContext,
-        feedbacks: batchParams.feedbacks,
+  async function requestJson(prompt: string, task: 'analysis' | 'synthesis', itemCount: number): Promise<unknown> {
+    let httpStatus: number | undefined;
+    let finishReason: string | undefined;
+    let contentLength = 0;
+    try {
+      const result = await runWithRetry<Record<string, unknown>>(async () => {
+        let response: Response;
+        try {
+          response = await fetch(OPENROUTER_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${params.apiKey}` },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: 'system', content: PT_BR_SYSTEM_INSTRUCTION },
+                { role: 'user', content: prompt },
+              ],
+              temperature: 0.2,
+              max_tokens: MAX_OUTPUT_TOKENS,
+              response_format: { type: 'json_object' },
+              provider: { require_parameters: true },
+            }),
+          });
+        } catch {
+          throw new IaApiClientError('Unable to contact OpenRouter', 'failed_ia_request');
+        }
+        httpStatus = response.status;
+        const payload: unknown = await response.json().catch(() => null);
+        const retryAfter = parseRetryAfterMs(response.headers.get('retry-after'));
+        if (!response.ok) throw new OpenRouterHttpError(response.status, retryAfter);
+        if (isObject(payload) && payload.error != null) throw new OpenRouterHttpError(errorStatus(payload.error), retryAfter);
+        if (!isObject(payload)) throw new IaApiClientError('Invalid OpenRouter response envelope', 'invalid_provider_response');
+        return payload;
+      }, {
+        label: 'OpenRouter',
+        isRetryable: error => error instanceof OpenRouterHttpError && RETRYABLE_STATUS.has(error.status),
+        suggestedDelayMs: error => error instanceof OpenRouterHttpError ? error.retryAfterMs : null,
       });
 
-      let content: string;
-      let finishReason: string | undefined;
-
+      const choice: unknown = Array.isArray(result.choices) ? result.choices[0] : undefined;
+      if (!isObject(choice)) throw new IaApiClientError('OpenRouter response has no completion choice', 'invalid_provider_response');
+      const knownFinishReasons = ['stop', 'length', 'content_filter', 'error', 'tool_calls', 'function_call'];
+      finishReason = typeof choice.finish_reason === 'string' && knownFinishReasons.includes(choice.finish_reason) ? choice.finish_reason : 'unknown';
+      const message = choice.message;
+      contentLength = isObject(message) && typeof message.content === 'string' ? message.content.length : 0;
+      if (choice.error != null) throw new OpenRouterHttpError(errorStatus(choice.error), null);
+      if (finishReason === 'error') throw new IaApiClientError('OpenRouter generation failed', 'ia_provider_error');
+      if (finishReason === 'length') throw new IaApiClientError('AI response truncated (length)', 'truncated_ai_response');
+      if (finishReason === 'content_filter' || (isObject(message) && message.refusal)) throw new IaApiClientError('AI refused to produce an analysis', 'ai_response_refused');
+      if (!isObject(message)) throw new IaApiClientError('OpenRouter response has no message', 'invalid_provider_response');
+      const content = message.content;
+      if (content == null || (typeof content === 'string' && !content.trim())) throw new IaApiClientError('AI returned no content', 'empty_ai_response');
+      if (typeof content !== 'string') throw new IaApiClientError('Unexpected AI content type', 'invalid_provider_response');
       try {
-        const result = await runWithRetry<OpenRouterResponse>(
-          async () => {
-            const response = await fetch(OPENROUTER_URL, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${params.apiKey}`,
-              },
-              body: JSON.stringify({
-                model,
-                messages: [{ role: 'user', content: prompt }],
-                max_tokens: MAX_OUTPUT_TOKENS,
-                // Reforça saída em JSON nos modelos que suportam; o parser tolera o resto.
-                response_format: { type: 'json_object' },
-              }),
-            });
-
-            if (!response.ok) {
-              const bodyText = await response.text().catch(() => '');
-              throw new OpenRouterHttpError(
-                response.status,
-                `OpenRouter ${response.status}: ${bodyText.slice(0, 200)}`,
-                parseRetryAfterMs(response.headers.get('retry-after')),
-              );
-            }
-
-            return (await response.json()) as OpenRouterResponse;
-          },
-          {
-            label: 'OpenRouter',
-            isRetryable: isRetryableOpenRouter,
-            suggestedDelayMs: suggestedDelayFromRetryAfter,
-          },
-        );
-
-        const choice = result.choices?.[0];
-        content = choice?.message?.content ?? '';
-        finishReason = choice?.finish_reason;
-      } catch (error) {
-        console.error(`[ia-analyze] OpenRouter falhou — motivo: ${describeError(error)}`);
-        throw new IaApiClientError(
-          `Failed to call model API (${describeError(error)})`,
-          'failed_ia_request',
-        );
-      }
-
-      // finish_reason 'length' = saída truncada (equivalente ao MAX_TOKENS do Gemini).
-      if (finishReason === 'length') {
-        throw new IaApiClientError('AI response truncated (length)', 'invalid_ai_response');
-      }
-
-      try {
-        return JSON.parse(extractJsonFromText(content)) as ParsedIaResponse;
+        try {
+          return JSON.parse(content);
+        } catch {
+          return JSON.parse(extractJsonFromText(content));
+        }
       } catch {
         throw new IaApiClientError('Invalid AI response JSON', 'invalid_ai_response');
       }
+    } catch (error) {
+      const failure = error instanceof IaApiClientError ? error : new IaApiClientError('Unable to process OpenRouter response', 'invalid_provider_response');
+      console.error('[ia-analyze] OpenRouter failure', {
+        code: failure.code, model: model.includes(params.apiKey) ? 'unknown' : safeLabel(model),
+        task, itemCount, httpStatus,
+        providerStatus: failure instanceof OpenRouterHttpError ? failure.status : undefined,
+        finishReason, contentLength,
+      });
+      throw failure;
+    }
+  }
+
+  return {
+    async analyzeBatch(batchParams: AnalyzeBatchWithIaParams): Promise<ParsedIaResponse> {
+      const parsed = await requestJson(buildIaPromptByScope({
+        scopeType: batchParams.scopeType,
+        enterpriseContext: batchParams.enterpriseContext,
+        feedbacks: batchParams.feedbacks,
+        languageRepair: batchParams.languageRepair,
+      }), 'analysis', batchParams.feedbacks.length);
+      validateIaBatchResponse(parsed, batchParams.feedbacks);
+      return parsed;
+    },
+    async synthesizeInsights(synthesisParams: SynthesizeInsightsParams) {
+      const parsed = await requestJson(
+        buildInsightsSynthesisPrompt(synthesisParams),
+        'synthesis',
+        synthesisParams.partialInsights.length,
+      );
+      validateInsightsSynthesisResponse(parsed);
+      return parsed;
     },
   };
 }
