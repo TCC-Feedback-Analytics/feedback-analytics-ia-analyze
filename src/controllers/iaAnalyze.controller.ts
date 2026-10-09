@@ -9,6 +9,8 @@ import { isInternalRequestAuthorized } from '../utils/isInternalRequestAuthorize
 import { isValidRemotePayload } from '../validations/iaAnalyze.validation.js';
 import { isValidInsightsSynthesisRequest } from '../validations/insightsSynthesisRequest.validation.js';
 import type { IaAnalyzeRemoteRunResponse } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/remote.contract';
+import { isCompanyQuestionSuggestionsRequest } from '../validations/companyQuestionSuggestions.validation.js';
+import { generateCompanyQuestionSuggestions } from '../services/companyQuestionSuggestions.service.js';
 
 /** Primeiro valor não-vazio de um header (Express pode dar string ou string[]). */
 function firstHeader(value: string | string[] | undefined): string | undefined {
@@ -38,6 +40,22 @@ function authorizeInternal(req: Request, res: Response): boolean {
     message: 'Missing or invalid internal token',
   });
   return false;
+}
+
+export async function generateCompanyQuestionsController(req: Request, res: Response) {
+  res.setHeader('Cache-Control', 'no-store');
+  if ((process.env.VERCEL === '1' || process.env.NODE_ENV === 'production')
+    && !process.env.IA_ANALYZE_INTERNAL_TOKEN?.trim()) {
+    return res.status(503).json({ error: 'internal_auth_not_configured' });
+  }
+  if (!authorizeInternal(req, res)) return;
+  if (!isCompanyQuestionSuggestionsRequest(req.body)) return res.status(400).json({ error: 'invalid_payload' });
+  try {
+    return res.json(await generateCompanyQuestionSuggestions(req.body, readLlmCreds(req)));
+  } catch (error) {
+    if (error instanceof IaAnalyzeServiceError) return res.status(error.statusCode).json({ error: error.code });
+    return res.status(500).json({ error: 'internal_server_error' });
+  }
 }
 
 /**

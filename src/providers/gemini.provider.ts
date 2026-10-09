@@ -1,4 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
+import { buildCompanyQuestionSuggestionsPrompt } from '../lib/companyQuestionSuggestionsPrompt.js';
+import { parseCompanyQuestionSuggestions } from '../validations/companyQuestionSuggestions.validation.js';
 import { buildIaPromptByScope } from '../lib/iaAnalyzePromptBuilders.js';
 import { buildInsightsSynthesisPrompt } from '../lib/insightsSynthesisPromptBuilder.js';
 import { PT_BR_SYSTEM_INSTRUCTION } from '../lib/prompts/ptBrSystemInstruction.js';
@@ -107,7 +109,7 @@ export function createIaApiClient(
 ): IaApiClient {
   const ai = new GoogleGenAI({ apiKey });
 
-  async function generateJson(prompt: string): Promise<unknown> {
+  async function generateJson(prompt: string, questionTask = false): Promise<unknown> {
     let aiResponse: AiResponseShape;
     try {
       aiResponse = await runWithRetry(
@@ -116,15 +118,24 @@ export function createIaApiClient(
             model,
             contents: prompt,
             config: {
+              ...(questionTask ? { httpOptions: { timeout: 60_000 }, abortSignal: AbortSignal.timeout(60_000) } : {}),
               systemInstruction: PT_BR_SYSTEM_INSTRUCTION,
               thinkingConfig: { thinkingBudget: 0 },
               temperature: 0.2,
-              maxOutputTokens: MAX_OUTPUT_TOKENS,
+              maxOutputTokens: questionTask ? 1024 : MAX_OUTPUT_TOKENS,
             },
           }) as Promise<AiResponseShape>,
-        { label: 'Gemini', isRetryable: isRetryableError, suggestedDelayMs: parseSuggestedDelayMs },
+        { label: 'Gemini', isRetryable: error => !questionTask && isRetryableError(error), suggestedDelayMs: parseSuggestedDelayMs },
       );
     } catch (error) {
+      if (questionTask) {
+        const status = getErrorStatus(error);
+        const code = status === 401 || status === 403 ? 'ia_provider_auth_error'
+          : isDailyQuotaExceeded(error) ? 'ia_provider_credits_exhausted'
+          : status === 429 ? 'ia_provider_rate_limited'
+          : status !== null && status >= 500 ? 'ia_provider_unavailable' : 'failed_ia_request';
+        throw new IaApiClientError('Unable to generate question suggestions', code);
+      }
       if (isDailyQuotaExceeded(error)) {
         console.error(
           `[ia-analyze] Gemini: cota DIÁRIA esgotada — falha rápida sem retry (retentar só queima mais cota). ${describeError(error)}`,
@@ -153,6 +164,9 @@ export function createIaApiClient(
   }
 
   return {
+    async generateCompanyQuestions(context) {
+      return parseCompanyQuestionSuggestions(await generateJson(buildCompanyQuestionSuggestionsPrompt(context), true));
+    },
     /**
      * Envia um batch ao modelo e devolve a resposta parseada em JSON. Retry/backoff
      * em falhas transitórias (via runWithRetry) e teto de saída. Saída truncada
