@@ -6,6 +6,8 @@ import { validateIaBatchResponse } from '../validations/iaBatchResponse.validati
 import { validateInsightsSynthesisResponse } from '../validations/insightsSynthesis.validation.js';
 import type { AnalyzeBatchWithIaParams, IaApiClient, IaApiClientErrorCode, ParsedIaResponse, SynthesizeInsightsParams } from '../../types/iaApiClient.types.js';
 import { IaApiClientError, RETRYABLE_STATUS, runWithRetry } from './shared/retry.js';
+import { buildCompanyQuestionSuggestionsPrompt } from '../lib/companyQuestionSuggestionsPrompt.js';
+import { parseCompanyQuestionSuggestions } from '../validations/companyQuestionSuggestions.validation.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_OUTPUT_TOKENS = 16_384;
@@ -49,7 +51,7 @@ function safeLabel(value: unknown): string {
 
 export function createOpenRouterClient(params: { apiKey: string; model?: string }): IaApiClient {
   const model = params.model?.trim() || DEFAULT_OPENROUTER_MODEL;
-  async function requestJson(prompt: string, task: 'analysis' | 'synthesis', itemCount: number): Promise<unknown> {
+  async function requestJson(prompt: string, task: 'analysis' | 'synthesis' | 'questions', itemCount: number): Promise<unknown> {
     let httpStatus: number | undefined;
     let finishReason: string | undefined;
     let contentLength = 0;
@@ -58,6 +60,7 @@ export function createOpenRouterClient(params: { apiKey: string; model?: string 
         let response: Response;
         try {
           response = await fetch(OPENROUTER_URL, {
+            ...(task === 'questions' ? { signal: AbortSignal.timeout(60_000) } : {}),
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${params.apiKey}` },
             body: JSON.stringify({
@@ -67,7 +70,7 @@ export function createOpenRouterClient(params: { apiKey: string; model?: string 
                 { role: 'user', content: prompt },
               ],
               temperature: 0.2,
-              max_tokens: MAX_OUTPUT_TOKENS,
+              max_tokens: task === 'questions' ? 1024 : MAX_OUTPUT_TOKENS,
               response_format: { type: 'json_object' },
               provider: { require_parameters: true },
             }),
@@ -84,7 +87,7 @@ export function createOpenRouterClient(params: { apiKey: string; model?: string 
         return payload;
       }, {
         label: 'OpenRouter',
-        isRetryable: error => error instanceof OpenRouterHttpError && RETRYABLE_STATUS.has(error.status),
+        isRetryable: error => task !== 'questions' && error instanceof OpenRouterHttpError && RETRYABLE_STATUS.has(error.status),
         suggestedDelayMs: error => error instanceof OpenRouterHttpError ? error.retryAfterMs : null,
       });
 
@@ -124,6 +127,9 @@ export function createOpenRouterClient(params: { apiKey: string; model?: string 
   }
 
   return {
+    async generateCompanyQuestions(context) {
+      return parseCompanyQuestionSuggestions(await requestJson(buildCompanyQuestionSuggestionsPrompt(context), 'questions', 3));
+    },
     async analyzeBatch(batchParams: AnalyzeBatchWithIaParams): Promise<ParsedIaResponse> {
       const parsed = await requestJson(buildIaPromptByScope({
         scopeType: batchParams.scopeType,
