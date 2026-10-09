@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { analyzeController, synthesizeInsightsController } from '../controllers/iaAnalyze.controller.js';
+import { analyzeController, synthesizeInsightsController, generateCompanyQuestionsController } from '../controllers/iaAnalyze.controller.js';
 
 const router = Router();
 
@@ -12,6 +12,7 @@ router.get('/ia-analyze/health', (_req, res) => {
 });
 
 router.post('/ia-analyze/analyze', analyzeController);
+router.post('/ia-analyze/generate-company-questions', generateCompanyQuestionsController);
 router.post('/ia-analyze/synthesize-insights', synthesizeInsightsController);
 
 export default router;
