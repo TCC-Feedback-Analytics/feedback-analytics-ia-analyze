@@ -2,9 +2,9 @@ import { createProvider } from '../providers/createProvider.js';
 import { IaApiClientError } from '../providers/shared/retry.js';
 import { IaAnalyzeServiceError, type LlmCreds } from './iaAnalyze.service.js';
 import { parseCompanyQuestionSuggestions } from '../validations/companyQuestionSuggestions.validation.js';
-import type { CompanyQuestionSuggestionsRequest } from '../../types/companyQuestionSuggestions.types.js';
+import type { CompanyQuestionSuggestionsRemoteRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/company-question-suggestions.contract';
 
-export async function generateCompanyQuestionSuggestions(body: CompanyQuestionSuggestionsRequest, creds?: LlmCreds) {
+export async function generateCompanyQuestionSuggestions(body: CompanyQuestionSuggestionsRemoteRequest, creds?: LlmCreds) {
   if (!creds?.apiKey?.trim() || !creds.model?.trim() || !['openrouter', 'gemini'].includes(creds.provider ?? '')) {
     throw new IaAnalyzeServiceError('Company AI configuration required', 409, 'ia_config_required');
   }

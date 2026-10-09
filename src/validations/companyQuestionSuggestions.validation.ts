@@ -1,4 +1,4 @@
-import type { CompanyQuestionSuggestionsRequest, CompanyQuestionSuggestionsResponse, CompanyQuestionSuggestion } from '../../types/companyQuestionSuggestions.types.js';
+import type { CompanyQuestionSuggestion, CompanyQuestionSuggestionsRemoteRequest, CompanyQuestionSuggestionsRemoteResponse } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/company-question-suggestions.contract';
 import { IaApiClientError } from '../providers/shared/retry.js';
 import { isLikelyPtBrText } from './ptBrLanguage.validation.js';
 
@@ -6,7 +6,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-export function isCompanyQuestionSuggestionsRequest(value: unknown): value is CompanyQuestionSuggestionsRequest {
+export function isCompanyQuestionSuggestionsRequest(value: unknown): value is CompanyQuestionSuggestionsRemoteRequest {
   if (!isObject(value) || Object.keys(value).length !== 1 || !isObject(value.enterprise_context)) return false;
   const context = value.enterprise_context;
   const fields = ['enterprise_name', 'business_summary', 'company_objective', 'analytics_goal', 'main_products_or_services'];
@@ -19,7 +19,7 @@ export function isCompanyQuestionSuggestionsRequest(value: unknown): value is Co
     && context.main_products_or_services.every(item => typeof item === 'string' && item.length <= 200));
 }
 
-export function parseCompanyQuestionSuggestions(value: unknown): CompanyQuestionSuggestionsResponse {
+export function parseCompanyQuestionSuggestions(value: unknown): CompanyQuestionSuggestionsRemoteResponse {
   const invalid = (): never => { throw new IaApiClientError('Invalid question suggestions', 'invalid_ai_response_schema'); };
   if (!isObject(value) || Object.keys(value).length !== 1 || !Array.isArray(value.questions) || value.questions.length !== 3) return invalid();
   const questions: CompanyQuestionSuggestion[] = value.questions.map((item: unknown, index: number) => {
@@ -33,5 +33,5 @@ export function parseCompanyQuestionSuggestions(value: unknown): CompanyQuestion
   const normalized = questions.map(q => q.question_text.normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' '));
   if (new Set(normalized).size !== 3) return invalid();
-  return { questions: questions as CompanyQuestionSuggestionsResponse['questions'] };
+  return { questions: questions as CompanyQuestionSuggestionsRemoteResponse['questions'] };
 }
