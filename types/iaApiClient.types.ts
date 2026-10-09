@@ -5,6 +5,7 @@ import type {
 import type { IaAnalyzeScopeType } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/scope.contract';
 import type { IaAnalyzeInsights } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/analysis.contract';
 import type { IaAnalyzeRemoteFeedbackAnalysis } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/remote.contract';
+import type { CompanyQuestionSuggestionsResponse } from './companyQuestionSuggestions.types.js';
 
 /**
  * Tipos do cliente de IA do dominio ia-analyze.
@@ -58,6 +59,7 @@ export type SynthesizeInsightsParams = {
  * Serve para desacoplar implementacao da chamada remota do restante do fluxo.
  */
 export type IaApiClient = {
+  generateCompanyQuestions?: (context: IaAnalyzeEnterpriseContext) => Promise<CompanyQuestionSuggestionsResponse>;
   analyzeBatch: (params: AnalyzeBatchWithIaParams) => Promise<ParsedIaResponse>;
   synthesizeInsights: (params: SynthesizeInsightsParams) => Promise<IaAnalyzeInsights>;
 };
