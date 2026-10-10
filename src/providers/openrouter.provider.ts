@@ -70,7 +70,10 @@ export function createOpenRouterClient(params: { apiKey: string; model?: string 
                 { role: 'user', content: prompt },
               ],
               temperature: 0.2,
-              max_tokens: task === 'questions' ? 1024 : MAX_OUTPUT_TOKENS,
+              // Em modelos de raciocínio o limite inclui os tokens de "pensamento": um teto
+              // baixo corta a resposta antes do JSON (finish_reason=length). Só os tokens
+              // usados são cobrados, então perguntas usam o mesmo teto das análises.
+              max_tokens: MAX_OUTPUT_TOKENS,
               response_format: { type: 'json_object' },
               provider: { require_parameters: true },
             }),
