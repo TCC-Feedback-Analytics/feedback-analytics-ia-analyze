@@ -183,6 +183,53 @@ Content-Type: application/json
 
 ---
 
+## Diagnóstico do escopo
+
+### `POST /internal/ia-analyze/diagnose-scope`
+
+Uma chamada só ao LLM. O pedido não leva feedbacks crus em lotes: leva os **números do escopo já calculados no Gateway**, do período e do período anterior de mesmo tamanho, e uma **amostra de comentários**. A IA só interpreta: diz o que vai bem, o que preocupa, o que mudou e o que fazer.
+
+**Headers:** os mesmos de `/analyze`. Aqui as credenciais `x-llm-*` da empresa são **obrigatórias**: sem elas, a resposta é `409 ia_config_required` e não há fallback para a chave do ambiente.
+
+**Body:** `ScopeDiagnosisRemoteRequest` (`@feedback/lib-shared` `v1.2.0`, `interfaces/contracts/ia-analyze/scope-diagnosis.contract.ts`)
+
+```typescript
+{
+  enterprise_context: IaAnalyzeEnterpriseContext,
+  scope: { scope_type, catalog_item_id, catalog_item_name },
+  period: { start: string | null, end: string | null },          // ISO; null nas duas = todo o período
+  previous_period: { start, end } | null,
+  current: ScopeDiagnosisMetrics,                                  // contagens, estrelas, perguntas, comentários, movimento, pico e clientes
+  previous: ScopeDiagnosisMetrics | null,
+  comment_samples: Array<{ id, message, rating, sentiment, reason, aspect? }>  // até 60
+}
+```
+
+Cada número leva a sua precisão (`confidence`). O prompt pede cautela com `insufficient` e `low`. Dia e faixa dos horários de pico vão por extenso, e cada comentário é cortado em 500 caracteres, com no máximo 40 na amostra.
+
+**Response 200:** `ScopeDiagnosisResult`
+
+```json
+{
+  "summary": "O escopo vai bem no geral, mas a entrega preocupa.",
+  "going_well": [{ "text": "Quem volta dá notas mais altas.", "evidence": "4,5 contra 4,1 na primeira visita." }],
+  "concerns": [{ "text": "A entrega é o ponto mais fraco.", "evidence": "Média 3,4, com 48% de satisfeitos." }],
+  "changes": [{ "text": "A média das estrelas caiu.", "evidence": "De 4,5 para 4,2." }],
+  "recommendations": [{ "priority": 1, "kind": "fix", "action": "Rever os prazos de entrega.", "evidence": "Média 3,4 na pergunta sobre entrega." }],
+  "limitations": ["Ainda há 5 comentários sem análise da IA."]
+}
+```
+
+**Validação local:**
+- todo ponto precisa ter texto e evidência;
+- de 1 a 5 recomendações, reordenadas e renumeradas pela prioridade;
+- sem período anterior, `changes` sai vazio;
+- todo texto passa pela checagem de pt-BR, com uma única nova tentativa reforçada, como na síntese.
+
+Os erros são os do provedor (tabela abaixo) com status `502`, além de `400 invalid_payload`, `409 ia_config_required` e `503 internal_auth_not_configured` (produção sem token interno).
+
+---
+
 ## Erros
 
 | Status | Código | Causa |
