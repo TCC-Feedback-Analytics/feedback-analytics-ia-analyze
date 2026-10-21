@@ -48,6 +48,8 @@ export function buildScopeDiagnosisPrompt(request: ScopeDiagnosisRemoteRequest, 
     '- "rating_weight" diz o quanto a nota da pergunta anda junto com as estrelas. Use para priorizar, sem afirmar que uma coisa causa a outra.',
     '- "silent_detractors" deram nota alta, mas escreveram um comentário negativo; "rating_misuse" deram nota baixa com comentário positivo.',
     '- "pending_analysis" são comentários ainda não lidos pela IA: se forem muitos, registre em "limitations".',
+    '- O comentário é opcional. "comment_participation.pct" é o % de avaliações com comentário: abaixo de 30%, diga em "limitations" que o tom dos comentários representa só uma parte dos clientes.',
+    '- Se "with_comment_mean" e "without_comment_mean" forem bem diferentes (meio ponto ou mais), diga quem comenta está mais ou menos satisfeito que quem só dá as estrelas, com as duas médias.',
     hasPrevious
       ? '- Compare com o período anterior ("previous") e descreva em "changes" o que melhorou ou piorou, sempre com os dois números.'
       : '- Não há período anterior para comparar: retorne "changes" vazio e não fale em melhora ou piora.',
