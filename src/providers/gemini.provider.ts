@@ -6,9 +6,12 @@ import { buildInsightsSynthesisPrompt } from '../lib/insightsSynthesisPromptBuil
 import { PT_BR_SYSTEM_INSTRUCTION } from '../lib/prompts/ptBrSystemInstruction.js';
 import { extractJsonFromText } from '../utils/extractJsonFromText.js';
 import { validateInsightsSynthesisResponse } from '../validations/insightsSynthesis.validation.js';
+import { buildScopeDiagnosisPrompt } from '../lib/scopeDiagnosisPrompt.js';
+import { parseScopeDiagnosisResult } from '../validations/scopeDiagnosis.validation.js';
 import type {
   AiResponseShape,
   AnalyzeBatchWithIaParams,
+  DiagnoseScopeParams,
   IaApiClient,
   ParsedIaResponse,
   SynthesizeInsightsParams,
@@ -185,6 +188,10 @@ export function createIaApiClient(
       const parsed = await generateJson(buildInsightsSynthesisPrompt(params));
       validateInsightsSynthesisResponse(parsed);
       return parsed;
+    },
+    async diagnoseScope({ request, languageRepair }: DiagnoseScopeParams) {
+      const parsed = await generateJson(buildScopeDiagnosisPrompt(request, languageRepair));
+      return parseScopeDiagnosisResult(parsed, request.previous !== null);
     },
   };
 }

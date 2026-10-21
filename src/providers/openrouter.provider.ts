@@ -4,10 +4,12 @@ import { PT_BR_SYSTEM_INSTRUCTION } from '../lib/prompts/ptBrSystemInstruction.j
 import { extractJsonFromText } from '../utils/extractJsonFromText.js';
 import { validateIaBatchResponse } from '../validations/iaBatchResponse.validation.js';
 import { validateInsightsSynthesisResponse } from '../validations/insightsSynthesis.validation.js';
-import type { AnalyzeBatchWithIaParams, IaApiClient, IaApiClientErrorCode, ParsedIaResponse, SynthesizeInsightsParams } from '../../types/iaApiClient.types.js';
+import type { AnalyzeBatchWithIaParams, DiagnoseScopeParams, IaApiClient, IaApiClientErrorCode, ParsedIaResponse, SynthesizeInsightsParams } from '../../types/iaApiClient.types.js';
 import { IaApiClientError, RETRYABLE_STATUS, runWithRetry } from './shared/retry.js';
 import { buildCompanyQuestionSuggestionsPrompt } from '../lib/companyQuestionSuggestionsPrompt.js';
 import { parseCompanyQuestionSuggestions } from '../validations/companyQuestionSuggestions.validation.js';
+import { buildScopeDiagnosisPrompt } from '../lib/scopeDiagnosisPrompt.js';
+import { parseScopeDiagnosisResult } from '../validations/scopeDiagnosis.validation.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_OUTPUT_TOKENS = 16_384;
@@ -51,7 +53,7 @@ function safeLabel(value: unknown): string {
 
 export function createOpenRouterClient(params: { apiKey: string; model?: string }): IaApiClient {
   const model = params.model?.trim() || DEFAULT_OPENROUTER_MODEL;
-  async function requestJson(prompt: string, task: 'analysis' | 'synthesis' | 'questions', itemCount: number): Promise<unknown> {
+  async function requestJson(prompt: string, task: 'analysis' | 'synthesis' | 'questions' | 'diagnosis', itemCount: number): Promise<unknown> {
     let httpStatus: number | undefined;
     let finishReason: string | undefined;
     let contentLength = 0;
@@ -151,6 +153,14 @@ export function createOpenRouterClient(params: { apiKey: string; model?: string 
       );
       validateInsightsSynthesisResponse(parsed);
       return parsed;
+    },
+    async diagnoseScope({ request, languageRepair }: DiagnoseScopeParams) {
+      const parsed = await requestJson(
+        buildScopeDiagnosisPrompt(request, languageRepair),
+        'diagnosis',
+        request.comment_samples.length,
+      );
+      return parseScopeDiagnosisResult(parsed, request.previous !== null);
     },
   };
 }

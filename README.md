@@ -17,6 +17,7 @@ Montados sob `/internal` — **nunca** exponha publicamente; todo acesso vem do 
 |---|---|---|
 | `GET` | `/internal/health` · `/internal/ia-analyze/health` | Health check → `{ ok: true, service: "ia-analyze" }` |
 | `POST` | `/internal/ia-analyze/analyze` | Analisa lotes de feedbacks (header `x-ia-analyze-token`; aceita creds `x-llm-*` por empresa/BYO-key) |
+| `POST` | `/internal/ia-analyze/diagnose-scope` | Diagnóstico do escopo: interpreta os números do período (e do anterior) e uma amostra de comentários |
 
 Payload, resposta e erros detalhados em [`docs/endpoints.md`](docs/endpoints.md).
 
