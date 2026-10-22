@@ -191,7 +191,7 @@ Uma chamada só ao LLM. O pedido não leva feedbacks crus em lotes: leva os **n�
 
 **Headers:** os mesmos de `/analyze`. Aqui as credenciais `x-llm-*` da empresa são **obrigatórias**: sem elas, a resposta é `409 ia_config_required` e não há fallback para a chave do ambiente.
 
-**Body:** `ScopeDiagnosisRemoteRequest` (`@feedback/lib-shared` `v1.2.0`, `interfaces/contracts/ia-analyze/scope-diagnosis.contract.ts`)
+**Body:** `ScopeDiagnosisRemoteRequest` (`@feedback/lib-shared`, `interfaces/contracts/ia-analyze/scope-diagnosis.contract.ts`)
 
 ```typescript
 {
@@ -201,9 +201,12 @@ Uma chamada só ao LLM. O pedido não leva feedbacks crus em lotes: leva os **n�
   previous_period: { start, end } | null,
   current: ScopeDiagnosisMetrics,                                  // contagens, estrelas, perguntas, comentários, movimento, pico e clientes
   previous: ScopeDiagnosisMetrics | null,
-  comment_samples: Array<{ id, message, rating, sentiment, reason, aspect? }>  // até 60
+  comment_samples: Array<{ id, message, rating, sentiment, reason, aspect? }>, // até 60
+  comment_field?: { hidden: 'all' | 'some' | 'none', prompt: string | null, advice: 'low_participation' | 'low_content' | null }
 }
 ```
+
+`comment_field` (contratos `v1.5.0`) é o campo de comentário do formulário do escopo: oculto em todos ou em parte dos itens, a pergunta própria que os clientes responderam e, quando vale mudar o campo, a sugestão calculada no Gateway. Com o campo oculto em tudo, o prompt pede para não falar de comentários; com `advice`, pede uma recomendação para ajustar o campo, com o número como evidência. Sem o campo (Gateway antigo), vale campo visível e sem sugestão.
 
 Cada número leva a sua precisão (`confidence`). O prompt pede cautela com `insufficient` e `low`. Dia e faixa dos horários de pico vão por extenso, e cada comentário é cortado em 500 caracteres, com no máximo 40 na amostra.
 

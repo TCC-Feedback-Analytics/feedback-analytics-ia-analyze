@@ -48,7 +48,10 @@ export function buildScopeDiagnosisPrompt(request: ScopeDiagnosisRemoteRequest, 
     '- "rating_weight" diz o quanto a nota da pergunta anda junto com as estrelas. Use para priorizar, sem afirmar que uma coisa causa a outra.',
     '- "silent_detractors" deram nota alta, mas escreveram um comentário negativo; "rating_misuse" deram nota baixa com comentário positivo.',
     '- "pending_analysis" são comentários ainda não lidos pela IA: se forem muitos, registre em "limitations".',
-    '- O comentário é opcional. "comment_participation.pct" é o % de avaliações com comentário: abaixo de 30%, diga em "limitations" que o tom dos comentários representa só uma parte dos clientes.',
+    '- O comentário é opcional. "comment_participation.pct" é o % de avaliações com comentário: abaixo de 30%, diga em "limitations" que o tom dos comentários representa só uma parte dos clientes (exceto com o campo oculto, abaixo).',
+    '- "comment_field.hidden": "all" quer dizer que o formulário deste escopo não tem campo de comentário. Então não fale de participação, do tom dos comentários nem de falta de comentários: baseie o diagnóstico nas estrelas e nas perguntas. "some" quer dizer que parte dos itens não tem o campo: a participação vale só para os outros.',
+    '- "comment_field.prompt", quando existe, é a pergunta que os clientes responderam no campo de comentário: leia os comentários como respostas a ela.',
+    '- "comment_field.advice" vem quando vale mudar o campo de comentário: "low_participation" (poucos comentam) ou "low_content" (a maioria dos comentários é curta, como "bom" ou "ok"; "comment_participation.short_pct" é o % deles). Nesse caso, inclua uma recomendação "fix" para ajustar o campo no formulário: trocar o convite por uma pergunta específica deste escopo ou ocultar o campo, com o número como evidência. Sem "advice", não recomende mudar o campo.',
     '- Se "with_comment_mean" e "without_comment_mean" forem bem diferentes (meio ponto ou mais), diga quem comenta está mais ou menos satisfeito que quem só dá as estrelas, com as duas médias.',
     hasPrevious
       ? '- Compare com o período anterior ("previous") e descreva em "changes" o que melhorou ou piorou, sempre com os dois números.'
@@ -78,6 +81,7 @@ export function buildScopeDiagnosisPrompt(request: ScopeDiagnosisRemoteRequest, 
       current: metricsForPrompt(request.current),
       previous: request.previous ? metricsForPrompt(request.previous) : null,
       comment_samples: samples,
+      comment_field: request.comment_field ?? { hidden: 'none', prompt: null, advice: null },
     }),
   ].join('\n');
 }
