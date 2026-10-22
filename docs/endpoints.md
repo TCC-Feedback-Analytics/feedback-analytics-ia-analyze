@@ -64,6 +64,7 @@ Content-Type: application/json
     feedbacks: Array<{
       id: string,
       message: string,
+      comment_prompt?: string | null,   // pergunta própria do escopo; o message é a resposta a ela (contratos v1.6.0)
       rating: number | null,
       created_at: string | null,
       scope_type: 'COMPANY' | 'PRODUCT' | 'SERVICE' | 'DEPARTMENT',
