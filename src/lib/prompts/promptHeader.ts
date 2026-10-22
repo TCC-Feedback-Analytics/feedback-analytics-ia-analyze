@@ -30,6 +30,7 @@ Regras IMPORTANTES:
 - NAO use termos como "pessimo", "ruim", "mediana", "boa" ou "otima" como keywords/categorias.
 - NAO copie texto das perguntas ou subperguntas dinamicas como keywords/categorias.
 - Se o texto for curto, prefira poucos termos relevantes e evidentes no proprio message.
+- Quando o feedback trouxer "message_question", o "message_primary" e a resposta do cliente a essa pergunta: leia o texto como resposta a ela (ex.: pergunta "O que faltou?" e texto "guardanapo" = faltou guardanapo, critica). NAO copie a pergunta como keyword/categoria.
 
 Regras de SENTIMENTO (siga esta hierarquia):
 1. O campo "dynamic_answers" e "dynamic_subanswers" sao o SINAL PRIMARIO de sentimento: cada item contem "question" (contexto da pergunta), "score" (nota de 1 a 5) e "label" (rotulo textual). Analise cada resposta no contexto da sua pergunta para determinar a polaridade real do cliente em cada aspecto avaliado.

@@ -74,6 +74,8 @@ export function buildIaPromptByScope(params: BuildIaPromptByScopeParams): string
       created_at: feedback.created_at,
       scope_type: feedback.scope_type,
       message_primary: capFeedbackMessage(feedback.message),
+      // Pergunta própria do escopo: o comentário é a resposta a ela.
+      ...(feedback.comment_prompt ? { message_question: feedback.comment_prompt } : {}),
       context_signals: {
         rating_star: feedback.rating,
         dynamic_answers: feedback.dynamic_answers.slice(0, MAX_DYNAMIC_ANSWERS).map((a) => ({
