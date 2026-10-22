@@ -56,6 +56,19 @@ function isCommentSample(value: unknown): boolean {
     && (value.aspect === undefined || typeof value.aspect === 'string');
 }
 
+const VALID_HIDDEN = new Set(['all', 'some', 'none']);
+const VALID_ADVICE = new Set(['low_participation', 'low_content']);
+const MAX_COMMENT_PROMPT_CHARS = 150;
+
+/** Campo de comentário do escopo; ausente em pedidos de gateways antigos. */
+function isCommentField(value: unknown): boolean {
+  if (value === undefined) return true;
+  return isObject(value)
+    && typeof value.hidden === 'string' && VALID_HIDDEN.has(value.hidden)
+    && (value.prompt === null || (typeof value.prompt === 'string' && value.prompt.length <= MAX_COMMENT_PROMPT_CHARS))
+    && (value.advice === null || (typeof value.advice === 'string' && VALID_ADVICE.has(value.advice)));
+}
+
 export function isScopeDiagnosisRequest(value: unknown): value is ScopeDiagnosisRemoteRequest {
   if (!isObject(value) || !isObject(value.enterprise_context) || !isObject(value.scope)) return false;
   const { scope } = value;
@@ -65,6 +78,7 @@ export function isScopeDiagnosisRequest(value: unknown): value is ScopeDiagnosis
   if (value.previous_period !== null && !isPeriod(value.previous_period)) return false;
   if (!isMetrics(value.current)) return false;
   if (value.previous !== null && !isMetrics(value.previous)) return false;
+  if (!isCommentField(value.comment_field)) return false;
   return Array.isArray(value.comment_samples) && value.comment_samples.length <= MAX_SAMPLES
     && value.comment_samples.every(isCommentSample);
 }

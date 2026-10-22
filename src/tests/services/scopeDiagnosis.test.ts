@@ -76,6 +76,22 @@ describe('prompt do diagnóstico do escopo', () => {
     expect(prompt).toContain('quem comenta está mais ou menos satisfeito');
   });
 
+  it('leva o campo de comentário e as regras de oculto, pergunta própria e sugestão', () => {
+    const prompt = buildScopeDiagnosisPrompt({
+      ...request(),
+      comment_field: { hidden: 'none', prompt: 'O que faltou no atendimento?', advice: 'low_content' },
+    });
+    expect(prompt).toContain('"comment_field":{"hidden":"none","prompt":"O que faltou no atendimento?","advice":"low_content"}');
+    expect(prompt).toContain('não fale de participação, do tom dos comentários nem de falta de comentários');
+    expect(prompt).toContain('leia os comentários como respostas a ela');
+    expect(prompt).toContain('inclua uma recomendação "fix" para ajustar o campo no formulário');
+    expect(prompt).toContain('Sem "advice", não recomende mudar o campo.');
+  });
+
+  it('pedido de gateway antigo, sem o campo, vale como campo visível e sem sugestão', () => {
+    expect(buildScopeDiagnosisPrompt(request())).toContain('"comment_field":{"hidden":"none","prompt":null,"advice":null}');
+  });
+
   it('põe dia e faixa por extenso', () => {
     const prompt = buildScopeDiagnosisPrompt(request());
     expect(prompt).toContain('"dia":"segunda"');
@@ -115,6 +131,15 @@ describe('validação do pedido', () => {
     expect(isScopeDiagnosisRequest({ ...base, comment_samples: [{ ...base.comment_samples[0], sentiment: 'angry' }] })).toBe(false);
     expect(isScopeDiagnosisRequest({ ...base, comment_samples: Array.from({ length: 61 }, () => base.comment_samples[0]) })).toBe(false);
     expect(isScopeDiagnosisRequest({ ...base, previous: undefined })).toBe(false);
+  });
+
+  it('confere o campo de comentário quando vem', () => {
+    const base = request();
+    expect(isScopeDiagnosisRequest({ ...base, comment_field: { hidden: 'all', prompt: null, advice: null } })).toBe(true);
+    expect(isScopeDiagnosisRequest({ ...base, comment_field: { hidden: 'some', prompt: 'Pergunta?', advice: 'low_participation' } })).toBe(true);
+    expect(isScopeDiagnosisRequest({ ...base, comment_field: { hidden: 'talvez', prompt: null, advice: null } } as never)).toBe(false);
+    expect(isScopeDiagnosisRequest({ ...base, comment_field: { hidden: 'none', prompt: 'x'.repeat(151), advice: null } })).toBe(false);
+    expect(isScopeDiagnosisRequest({ ...base, comment_field: { hidden: 'none', prompt: null, advice: 'mudar' } } as never)).toBe(false);
   });
 });
 
