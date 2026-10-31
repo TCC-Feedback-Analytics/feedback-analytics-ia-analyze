@@ -209,6 +209,8 @@ Uma chamada só ao LLM. O pedido não leva feedbacks crus em lotes: leva os **n�
 
 `comment_field` (contratos `v1.5.0`) é o campo de comentário do formulário do escopo: oculto em todos ou em parte dos itens, a pergunta própria que os clientes responderam e, quando vale mudar o campo, a sugestão calculada no Gateway. Com o campo oculto em tudo, o prompt pede para não falar de comentários; com `advice`, pede uma recomendação para ajustar o campo, com o número como evidência. Sem o campo (Gateway antigo), vale campo visível e sem sugestão.
 
+`current.channels` e `previous.channels` (contratos `v1.7.0`, opcionais) dizem por onde chegaram as avaliações: `QR`, `LINK`, `NFC` e `null` (sem a marca de canal). O prompt pede comparar canais só com 10 ou mais avaliações em cada um.
+
 Cada número leva a sua precisão (`confidence`). O prompt pede cautela com `insufficient` e `low`. Dia e faixa dos horários de pico vão por extenso, e cada comentário é cortado em 500 caracteres, com no máximo 40 na amostra.
 
 **Response 200:** `ScopeDiagnosisResult`

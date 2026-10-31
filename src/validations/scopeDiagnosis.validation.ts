@@ -34,6 +34,19 @@ function isPeriod(value: unknown): value is ScopeDiagnosisPeriod {
   return isObject(value) && isNullableString(value.start) && isNullableString(value.end);
 }
 
+const VALID_CHANNELS = new Set(['QR', 'LINK', 'NFC']);
+const MAX_CHANNELS = 4;
+
+/** Por onde chegaram as avaliações; ausente em pedidos de gateways antigos. */
+function isChannels(value: unknown): boolean {
+  if (value === undefined) return true;
+  return Array.isArray(value) && value.length <= MAX_CHANNELS && value.every(item =>
+    isObject(item)
+    && (item.channel === null || (typeof item.channel === 'string' && VALID_CHANNELS.has(item.channel)))
+    && isCount(item.count)
+    && (item.mean === null || typeof item.mean === 'number'));
+}
+
 function isMetrics(value: unknown): boolean {
   if (!isObject(value) || !isObject(value.counts)) return false;
   const { counts } = value;
@@ -42,6 +55,7 @@ function isMetrics(value: unknown): boolean {
   if (value.comments !== null && !isObject(value.comments)) return false;
   if (value.movement !== null && !isObject(value.movement)) return false;
   if (value.customers !== null && !isObject(value.customers)) return false;
+  if (!isChannels(value.channels)) return false;
   return Array.isArray(value.questions) && value.questions.length <= MAX_QUESTIONS
     && value.questions.every(isObject)
     && Array.isArray(value.peak_times) && value.peak_times.length <= 28 && value.peak_times.every(isObject);

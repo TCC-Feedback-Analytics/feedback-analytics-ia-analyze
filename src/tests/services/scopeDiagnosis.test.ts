@@ -33,6 +33,7 @@ function metrics(mean = 4.2): ScopeDiagnosisMetrics {
     peak_times: [{ weekday: 1, band: 1, count: 8, mean: 3.9 }],
     customers: { identified: 30, returning_pct: 20, returning_pct_ci: { lower: 9, upper: 38 }, first_time_mean: 4.1, returning_mean: 4.5 },
     comment_participation: { pct: 25, with_comment_mean: 3.2, without_comment_mean: 4.6 },
+    channels: [{ channel: 'QR', count: 25, mean: 4.1 }, { channel: 'NFC', count: 12, mean: 4.6 }, { channel: null, count: 3, mean: 3.7 }],
   };
 }
 
@@ -88,6 +89,12 @@ describe('prompt do diagnóstico do escopo', () => {
     expect(prompt).toContain('Sem "advice", não recomende mudar o campo.');
   });
 
+  it('leva os canais e a regra de só comparar com 10 avaliações em cada um', () => {
+    const prompt = buildScopeDiagnosisPrompt(request());
+    expect(prompt).toContain('"channels":[{"channel":"QR","count":25,"mean":4.1}');
+    expect(prompt).toContain('Compare canais só quando cada um tiver 10 ou mais avaliações');
+  });
+
   it('pedido de gateway antigo, sem o campo, vale como campo visível e sem sugestão', () => {
     expect(buildScopeDiagnosisPrompt(request())).toContain('"comment_field":{"hidden":"none","prompt":null,"advice":null}');
   });
@@ -131,6 +138,15 @@ describe('validação do pedido', () => {
     expect(isScopeDiagnosisRequest({ ...base, comment_samples: [{ ...base.comment_samples[0], sentiment: 'angry' }] })).toBe(false);
     expect(isScopeDiagnosisRequest({ ...base, comment_samples: Array.from({ length: 61 }, () => base.comment_samples[0]) })).toBe(false);
     expect(isScopeDiagnosisRequest({ ...base, previous: undefined })).toBe(false);
+  });
+
+  it('confere os canais quando vêm e aceita pedido sem eles', () => {
+    const base = request();
+    const { channels: _channels, ...withoutChannels } = base.current;
+    void _channels;
+    expect(isScopeDiagnosisRequest({ ...base, current: withoutChannels })).toBe(true);
+    expect(isScopeDiagnosisRequest({ ...base, current: { ...base.current, channels: [{ channel: 'TEST', count: 1, mean: 5 }] } } as never)).toBe(false);
+    expect(isScopeDiagnosisRequest({ ...base, current: { ...base.current, channels: [{ channel: 'QR', count: -1, mean: 5 }] } })).toBe(false);
   });
 
   it('confere o campo de comentário quando vem', () => {
