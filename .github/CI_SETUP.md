@@ -1,7 +1,7 @@
 # CI / Deploy — IA Analyze
 
 Consome **apenas tipos** de `@feedback/lib-shared` (repositório **público**
-`feedback-analytics-contracts`, via git tag `v1.0.0`). O `npm ci` clona **sem token**;
+`feedback-analytics-contracts`, via git tag `v1.7.0`). O `npm ci` clona **sem token**;
 os workflows só reescrevem `ssh→https` antes do install:
 
 ```
@@ -18,16 +18,23 @@ git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
 
 O **CI** (lint/typecheck/unit) **não precisa de secret** — os testes são mockados.
 
+## CI
+
+`ci.yml` roda em `push` e `pull_request` para `main` e `developer`, com Node 20, em
+dois jobs: `lint-typecheck` (`npm run lint` + `tsc -p tsconfig.ci.json --noEmit`) e
+`unit-tests` (`npm test`).
+
 ## Env de runtime (no projeto Vercel, NÃO como GitHub secret)
 
-O provedor de LLM (`LLM_PROVIDER` = `gemini`/`openrouter`, com a chave do provedor
-escolhido — `GEMINI_API_KEY` ou `OPENROUTER_API_KEY` — e opcionalmente `LLM_MODEL`)
-e o token interno (`IA_ANALYZE_INTERNAL_TOKEN`, autenticação do header
-`x-ia-analyze-token` entre o api-gateway e este serviço) são variáveis de ambiente
-configuradas nas **Settings do projeto Vercel** — não entram no CI. Cada empresa
-ainda pode sobrescrever provedor/chave/modelo por requisição (BYO-key, headers
-`x-llm-*`); o env é o **fallback global**. (Opcionais locais: `PORT`,
-`IA_LLM_CONCURRENCY`; ver `.env.example`.)
+O token interno (`IA_ANALYZE_INTERNAL_TOKEN`, autenticação do header
+`x-ia-analyze-token` entre o api-gateway e este serviço) é variável de ambiente
+configurada nas **Settings do projeto Vercel** — não entra no CI. Na Vercel, sem ele,
+`diagnose-scope` e `generate-company-questions` respondem `503`. Provedor, chave e
+modelo do LLM **não** ficam no ambiente: o api-gateway manda os da empresa em cada
+requisição (headers `x-llm-*`). O código ainda lê `LLM_PROVIDER`, `GEMINI_API_KEY`/
+`OPENROUTER_API_KEY` e `LLM_MODEL` como fallback legado na análise e na síntese, mas
+eles não fazem parte da configuração padrão. (Opcionais: `PORT`, `IA_LLM_CONCURRENCY`;
+ver `.env.example`.)
 
 ## Deploy
 
