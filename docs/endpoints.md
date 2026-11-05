@@ -35,7 +35,7 @@ x-ia-analyze-token: <IA_ANALYZE_INTERNAL_TOKEN>
 Content-Type: application/json
 ```
 
-> **Nota:** o token é **opcional**. Se `IA_ANALYZE_INTERNAL_TOKEN` não estiver definido no ambiente do serviço, todas as requisições são aceitas — comportamento intencional para desenvolvimento local.
+> **Nota:** o token só é **opcional** no desenvolvimento local. Sem `IA_ANALYZE_INTERNAL_TOKEN`, as rotas aceitam todas as requisições fora da Vercel e fora de `NODE_ENV=production`; lá, todas respondem `503 internal_auth_not_configured`.
 
 > **Credenciais do LLM (BYO-key).** O Gateway envia o provedor, a chave e o modelo da empresa por header — fora do corpo e dos logs:
 > ```
@@ -225,7 +225,7 @@ No prompt, cada resumo parcial é cortado em 6.000 caracteres e cada insight par
 - de 1 a 8 recomendações, nenhuma vazia (o prompt pede de 5 a 8);
 - resumo e recomendações passam pela checagem de pt-BR, com uma única nova tentativa reforçada.
 
-Os erros são `400 invalid_payload`, `401`, `500 missing_*_api_key`, `500 internal_server_error` e, em qualquer falha do provedor ou da validação, `502` com o código da falha (tabela abaixo).
+Os erros são `400 invalid_payload`, `401`, `500 missing_*_api_key`, `500 internal_server_error`, `503 internal_auth_not_configured` (produção sem token interno) e, em qualquer falha do provedor ou da validação, `502` com o código da falha (tabela abaixo).
 
 ---
 
@@ -339,7 +339,7 @@ Os erros são os do provedor (tabela abaixo) com status `502`, além de `400 inv
 | `502` | `failed_ia_request` | Falha ao chamar o provedor LLM, após esgotar as tentativas do provider: no Gemini, qualquer erro do SDK (credencial, cota ou rede); no OpenRouter, falha de rede ou timeout — ver Troubleshooting |
 | `502` | `invalid_ai_response` | Provedor LLM retornou resposta não parseável como JSON; no Gemini, também a saída truncada (`finishReason=MAX_TOKENS`) |
 | `502` | demais códigos do provedor | Erro HTTP do provedor (`ia_provider_*`), recusa, resposta vazia ou truncada no OpenRouter, schema, idioma ou cobertura incompleta — ver [validação das respostas](validacao-respostas-ia.md) |
-| `503` | `internal_auth_not_configured` | `/diagnose-scope` ou `/generate-company-questions` em produção (`VERCEL=1` ou `NODE_ENV=production`) sem `IA_ANALYZE_INTERNAL_TOKEN` |
+| `503` | `internal_auth_not_configured` | Qualquer rota em produção (`VERCEL=1` ou `NODE_ENV=production`) sem `IA_ANALYZE_INTERNAL_TOKEN` |
 
 **Formato dos erros:**
 ```json
@@ -349,7 +349,7 @@ Os erros são os do provedor (tabela abaixo) com status `502`, além de `400 inv
 }
 ```
 
-Em `/diagnose-scope` e `/generate-company-questions`, só o `401` traz `message`; os demais erros dessas rotas trazem só `error`.
+Em `/diagnose-scope` e `/generate-company-questions`, só o `401` traz `message`; os demais erros dessas rotas trazem só `error`. Em todas as rotas, o `503 internal_auth_not_configured` traz só `error`.
 
 ---
 

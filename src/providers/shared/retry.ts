@@ -42,14 +42,21 @@ export function getErrorStatus(error: unknown): number | null {
   return null;
 }
 
-/** Resumo conciso (status + mensagem, até 300 chars) para logs de diagnóstico. */
+/**
+ * Resumo do erro para os logs: status HTTP, nome e código (ex.: `ECONNRESET`).
+ * Não leva a mensagem do provedor, que pode trazer trecho da resposta ou dos
+ * feedbacks enviados.
+ */
 export function describeError(error: unknown): string {
   const status = getErrorStatus(error);
-  const rawMessage = String(
-    (error as { message?: unknown })?.message ?? error ?? 'erro desconhecido',
-  );
-  const message = rawMessage.replace(/\s+/g, ' ').trim().slice(0, 300);
-  return status !== null ? `status=${status} ${message}` : message;
+  const name = error instanceof Error ? error.name : 'erro desconhecido';
+  const code = (error as { code?: unknown } | null)?.code;
+  const parts = [
+    status !== null ? `status=${status}` : null,
+    name,
+    typeof code === 'string' ? `code=${code}` : null,
+  ];
+  return parts.filter(Boolean).join(' ');
 }
 
 /** Backoff exponencial com jitter, limitado a MAX_BACKOFF_MS. */
