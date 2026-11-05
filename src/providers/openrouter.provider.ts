@@ -2,6 +2,7 @@ import { buildIaPromptByScope } from '../lib/iaAnalyzePromptBuilders.js';
 import { buildInsightsSynthesisPrompt } from '../lib/insightsSynthesisPromptBuilder.js';
 import { PT_BR_SYSTEM_INSTRUCTION } from '../lib/prompts/ptBrSystemInstruction.js';
 import { extractJsonFromText } from '../utils/extractJsonFromText.js';
+import { validateIaBatchResponse } from '../validations/iaBatchResponse.validation.js';
 import { validateInsightsSynthesisResponse } from '../validations/insightsSynthesis.validation.js';
 import type { AnalyzeBatchWithIaParams, DiagnoseScopeParams, IaApiClient, IaApiClientErrorCode, ParsedIaResponse, SynthesizeInsightsParams } from '../../types/iaApiClient.types.js';
 import { IaApiClientError, RETRYABLE_STATUS, runWithRetry } from './shared/retry.js';
@@ -141,9 +142,8 @@ export function createOpenRouterClient(params: { apiKey: string; model?: string 
         feedbacks: batchParams.feedbacks,
         languageRepair: batchParams.languageRepair,
       }), 'analysis', batchParams.feedbacks.length);
-      // Como no Gemini: a validação do lote (validateIaBatchResponse) fica no
-      // service, que vale para os dois provedores.
-      return parsed as ParsedIaResponse;
+      validateIaBatchResponse(parsed, batchParams.feedbacks);
+      return parsed;
     },
     async synthesizeInsights(synthesisParams: SynthesizeInsightsParams) {
       const parsed = await requestJson(
