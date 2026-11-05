@@ -64,18 +64,23 @@ export type LlmCreds = { provider?: string; apiKey?: string; model?: string };
 
 /**
  * Resolve provedor/chave/modelo. Prioriza o `override` (headers, na Camada 2) e
- * cai no env: `LLM_PROVIDER` (default `gemini`, para uma transição sem regressão),
- * `LLM_MODEL`, e a chave do provedor escolhido (`OPENROUTER_API_KEY`/`GEMINI_API_KEY`).
+ * cai no env: `LLM_PROVIDER`, `LLM_MODEL` e a chave do provedor escolhido
+ * (`OPENROUTER_API_KEY`/`GEMINI_API_KEY`). Sem provedor válido, recusa com
+ * `409 ia_config_required`, como o diagnóstico e as perguntas da empresa: não há
+ * mais o Gemini como padrão, só para quem o pede.
  */
 function resolveProviderConfig(override?: LlmCreds): {
   provider: LlmProvider;
   apiKey: string;
   model?: string;
 } {
-  const providerRaw = (override?.provider ?? process.env.LLM_PROVIDER ?? 'gemini')
+  const providerRaw = (override?.provider ?? process.env.LLM_PROVIDER ?? '')
     .trim()
     .toLowerCase();
-  const provider: LlmProvider = providerRaw === 'openrouter' ? 'openrouter' : 'gemini';
+  if (providerRaw !== 'openrouter' && providerRaw !== 'gemini') {
+    throw new IaAnalyzeServiceError('LLM provider required', 409, 'ia_config_required');
+  }
+  const provider: LlmProvider = providerRaw;
   const model = (override?.model ?? process.env.LLM_MODEL ?? '').trim() || undefined;
   const apiKey = (
     override?.apiKey ??
@@ -97,7 +102,7 @@ function resolveProviderConfig(override?: LlmCreds): {
 /**
  * Executa `task` sobre cada item com no máximo `limit` chamadas em paralelo
  * (semáforo simples), preservando a ordem dos resultados. Substitui o
- * `Promise.all` sem limite, que disparava todas as chamadas ao Gemini de uma vez.
+ * `Promise.all` sem limite, que disparava todas as chamadas ao provedor de uma vez.
  */
 async function mapWithConcurrency<T, R>(
   items: T[],

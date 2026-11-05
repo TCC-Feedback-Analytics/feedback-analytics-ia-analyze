@@ -16,7 +16,6 @@ export async function runScopeDiagnosisService(
   }
   const client = createProvider({ provider: creds.provider as 'openrouter' | 'gemini', apiKey: creds.apiKey, model: creds.model });
   const diagnoseScope = client.diagnoseScope;
-  if (!diagnoseScope) throw new IaAnalyzeServiceError('Unsupported operation', 503, 'scope_diagnosis_service_unavailable');
   try {
     try {
       return await diagnoseScope({ request });

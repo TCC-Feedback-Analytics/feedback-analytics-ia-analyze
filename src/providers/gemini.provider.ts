@@ -154,7 +154,7 @@ export function createIaApiClient(
 
     const finishReason = aiResponse.candidates?.[0]?.finishReason;
     if (finishReason === 'MAX_TOKENS') {
-      throw new IaApiClientError('AI response truncated (MAX_TOKENS)', 'invalid_ai_response');
+      throw new IaApiClientError('AI response truncated (MAX_TOKENS)', 'truncated_ai_response');
     }
 
     const maybeText = aiResponse.text;
@@ -173,7 +173,7 @@ export function createIaApiClient(
     /**
      * Envia um batch ao modelo e devolve a resposta parseada em JSON. Retry/backoff
      * em falhas transitórias (via runWithRetry) e teto de saída. Saída truncada
-     * (finishReason MAX_TOKENS) é tratada como resposta inválida, não parseada.
+     * (finishReason MAX_TOKENS) vira `truncated_ai_response`, como no OpenRouter.
      */
     async analyzeBatch(params: AnalyzeBatchWithIaParams): Promise<ParsedIaResponse> {
       const prompt = buildIaPromptByScope({
