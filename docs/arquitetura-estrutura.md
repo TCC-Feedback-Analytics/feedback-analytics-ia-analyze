@@ -125,7 +125,7 @@ O retry/erro é **compartilhado** pelos dois adaptadores (Gemini e OpenRouter) n
 - **Retry/backoff exponencial com jitter:** até `MAX_ATTEMPTS = 4` tentativas para falhas transitórias (status `429`, `500`, `502`, `503`, `504`). O atraso é exponencial com jitter (limitado a 20s) e **honra o delay sugerido** pelo provedor quando presente — o `retryDelay` do Gemini ou o header `Retry-After` do OpenRouter. Cada provedor decide o que **não** retentar: no Gemini, a **cota diária** esgotada falha rápido (retentar só queima mais cota); no OpenRouter, `401` (chave inválida) e `402` (sem créditos) não são retentados.
 - **Teto de saída:** `maxOutputTokens` / `max_tokens = 16384` por chamada — folgado, abaixo do máximo do modelo, servindo de trava já que os lotes vêm fatiados por tamanho. Exceção: no Gemini, a geração de perguntas usa `1024`.
 - **Geração de perguntas:** não tem retry e tem timeout de 60 s nos dois adaptadores.
-- **Saída truncada:** quando a saída é cortada por limite de tokens (Gemini `finishReason = MAX_TOKENS`; OpenRouter `finish_reason = 'length'`), o JSON está incompleto; o provider **não tenta parsear** e lança `invalid_ai_response` (Gemini) ou `truncated_ai_response` (OpenRouter).
+- **Saída truncada:** quando a saída é cortada por limite de tokens (Gemini `finishReason = MAX_TOKENS`; OpenRouter `finish_reason = 'length'`), o JSON está incompleto; o provider **não tenta parsear** e lança `truncated_ai_response` nos dois provedores.
 
 ---
 
@@ -145,15 +145,15 @@ Diagnóstico e sugestões de perguntas **não usam o fallback legado** da seçã
 
 O serviço deixou de ser preso ao Gemini. Duas peças novas, sem mexer no motor de análise:
 
-- **Fábrica (`providers/createProvider.ts`):** recebe `{ provider, apiKey, model }` e devolve o adaptador certo (`openrouter` → OpenRouter; `gemini`, e qualquer outro valor, → Gemini), ambos por trás da porta `IaApiClient`. Adicionar um provedor novo é escrever mais um adaptador — o orquestrador não muda.
+- **Fábrica (`providers/createProvider.ts`):** recebe `{ provider, apiKey, model }` e devolve o adaptador certo (`openrouter` → OpenRouter; `gemini` → Gemini; outro valor nem chega aqui, porque o service responde antes `409 ia_config_required`), ambos por trás da porta `IaApiClient`. Adicionar um provedor novo é escrever mais um adaptador — o orquestrador não muda.
 - **Adaptador OpenRouter (`providers/openrouter.provider.ts`):** fala a API compatível com OpenAI (`POST /chat/completions`), reusando o **mesmo** builder de prompt e parser de JSON do Gemini. Default de modelo: `openrouter/auto` (roteamento automático).
 
 **De onde vêm provedor/chave/modelo na análise e na síntese** (`resolveProviderConfig` no `iaAnalyze.service.ts`), em ordem de prioridade, campo a campo:
 
 1. **Por requisição (BYO-key):** headers `x-llm-provider` / `x-llm-api-key` / `x-llm-model`, enviados pelo API Gateway com a chave **decifrada** da empresa. O controller lê via `readLlmCreds(req)` e **nunca** loga esses headers (a chave é sensível).
-2. **Fallback global legado:** o código ainda reconhece `LLM_PROVIDER` (default `gemini`), `GEMINI_API_KEY`/`OPENROUTER_API_KEY` e `LLM_MODEL` para compatibilidade, mas essas variáveis não fazem parte da configuração padrão (não estão no `.env.example`). O Gateway exige a chave OpenRouter por empresa.
+2. **Fallback global legado:** o código ainda reconhece `LLM_PROVIDER` (sem padrão: vazio ou desconhecido responde `409 ia_config_required`), `GEMINI_API_KEY`/`OPENROUTER_API_KEY` e `LLM_MODEL` para compatibilidade, mas essas variáveis não fazem parte da configuração padrão (não estão no `.env.example`). O Gateway exige a chave OpenRouter por empresa.
 
-O provedor resolvido vira `openrouter` só se o valor for `openrouter`; qualquer outro vira `gemini`. Se nenhum dos dois trouxer chave para o provedor escolhido, o serviço responde `500` `missing_gemini_api_key` / `missing_openrouter_api_key`. Diagnóstico do escopo e sugestões de perguntas não passam por aqui: usam só os headers (ver [Outras tarefas de IA](#outras-tarefas-de-ia)). Assim, a decisão "qual empresa usa qual chave" mora no **Gateway** (tabela cifrada `enterprise_ia_config`); o `ia-analyze` continua **stateless** — só recebe a credencial pronta e executa.
+Só `openrouter` e `gemini` passam; vazio ou outro valor responde `409 ia_config_required`. Se nenhum dos dois trouxer chave para o provedor escolhido, o serviço responde `500` `missing_gemini_api_key` / `missing_openrouter_api_key`. Diagnóstico do escopo e sugestões de perguntas não passam por aqui: usam só os headers (ver [Outras tarefas de IA](#outras-tarefas-de-ia)). Assim, a decisão "qual empresa usa qual chave" mora no **Gateway** (tabela cifrada `enterprise_ia_config`); o `ia-analyze` continua **stateless** — só recebe a credencial pronta e executa.
 
 ---
 
