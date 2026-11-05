@@ -83,8 +83,9 @@ empresa. É uma chamada sem retry, com timeout de 60 s.
 Os logs do adaptador OpenRouter contêm somente código, modelo, tarefa, quantidade
 de itens, status HTTP/status do provedor, motivo de término e tamanho do conteúdo.
 Não incluem chave, headers, prompt, feedbacks, raciocínio, resposta bruta ou
-mensagens/metadados arbitrários devolvidos pelo provedor. O adaptador Gemini
-registra o status e até 300 caracteres da mensagem de erro do SDK.
+mensagens/metadados arbitrários devolvidos pelo provedor. O adaptador Gemini e
+os avisos de nova tentativa dos dois provedores registram só o status HTTP, o nome
+e o código do erro (`describeError`), sem a mensagem do SDK.
 
 Todos os códigos abaixo chegam ao Gateway com status `502`.
 

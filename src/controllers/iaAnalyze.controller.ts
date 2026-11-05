@@ -13,6 +13,7 @@ import { isCompanyQuestionSuggestionsRequest } from '../validations/companyQuest
 import { generateCompanyQuestionSuggestions } from '../services/companyQuestionSuggestions.service.js';
 import { isScopeDiagnosisRequest } from '../validations/scopeDiagnosis.validation.js';
 import { runScopeDiagnosisService } from '../services/scopeDiagnosis.service.js';
+import { describeError } from '../providers/shared/retry.js';
 
 /** Primeiro valor não-vazio de um header (Express pode dar string ou string[]). */
 function firstHeader(value: string | string[] | undefined): string | undefined {
@@ -35,7 +36,20 @@ function readLlmCreds(req: Request): LlmCreds | undefined {
   return { provider, apiKey, model };
 }
 
+/**
+ * Sem token no ambiente, `isInternalRequestAuthorized` libera tudo (útil no
+ * local). Em produção isso abriria as rotas para qualquer um, então elas recusam.
+ */
+function isInternalAuthMissingInProduction(): boolean {
+  const isProduction = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+  return isProduction && !process.env.IA_ANALYZE_INTERNAL_TOKEN?.trim();
+}
+
 function authorizeInternal(req: Request, res: Response): boolean {
+  if (isInternalAuthMissingInProduction()) {
+    res.status(503).json({ error: 'internal_auth_not_configured' });
+    return false;
+  }
   if (isInternalRequestAuthorized(req)) return true;
   res.status(401).json({
     error: 'unauthorized_internal_request',
@@ -46,10 +60,6 @@ function authorizeInternal(req: Request, res: Response): boolean {
 
 export async function generateCompanyQuestionsController(req: Request, res: Response) {
   res.setHeader('Cache-Control', 'no-store');
-  if ((process.env.VERCEL === '1' || process.env.NODE_ENV === 'production')
-    && !process.env.IA_ANALYZE_INTERNAL_TOKEN?.trim()) {
-    return res.status(503).json({ error: 'internal_auth_not_configured' });
-  }
   if (!authorizeInternal(req, res)) return;
   if (!isCompanyQuestionSuggestionsRequest(req.body)) return res.status(400).json({ error: 'invalid_payload' });
   try {
@@ -63,10 +73,6 @@ export async function generateCompanyQuestionsController(req: Request, res: Resp
 /** Diagnóstico do escopo: recebe os números já calculados no gateway, nunca feedbacks crus em lote. */
 export async function diagnoseScopeController(req: Request, res: Response) {
   res.setHeader('Cache-Control', 'no-store');
-  if ((process.env.VERCEL === '1' || process.env.NODE_ENV === 'production')
-    && !process.env.IA_ANALYZE_INTERNAL_TOKEN?.trim()) {
-    return res.status(503).json({ error: 'internal_auth_not_configured' });
-  }
   if (!authorizeInternal(req, res)) return;
   if (!isScopeDiagnosisRequest(req.body)) return res.status(400).json({ error: 'invalid_payload' });
   try {
@@ -110,7 +116,8 @@ export async function analyzeController(req: Request, res: Response) {
       });
     }
 
-    console.error('[ia-analyze] unexpected error:', error);
+    // Só o resumo: o erro inteiro pode carregar trecho dos feedbacks do lote.
+    console.error(`[ia-analyze] unexpected error: ${describeError(error)}`);
 
     return res.status(500).json({
       error: 'internal_server_error',
