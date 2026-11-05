@@ -10,8 +10,8 @@ saída truncada, JSON inválido e estrutura inválida são tratados separadament
 O formato JSON não substitui a validação local do conteúdo.
 
 No Gemini, a checagem antes da validação local é menor: a saída truncada
-(`finishReason=MAX_TOKENS`) sai como `invalid_ai_response`, e o texto só passa
-pela extração e pelo parse do JSON.
+(`finishReason=MAX_TOKENS`) sai como `truncated_ai_response`, como no OpenRouter,
+e o texto só passa pela extração e pelo parse do JSON.
 
 Todas as chamadas recebem uma instrução de sistema que exige português
 brasileiro. Resumos e recomendações da análise e da síntese, todo texto do
@@ -83,8 +83,9 @@ empresa. É uma chamada sem retry, com timeout de 60 s.
 Os logs do adaptador OpenRouter contêm somente código, modelo, tarefa, quantidade
 de itens, status HTTP/status do provedor, motivo de término e tamanho do conteúdo.
 Não incluem chave, headers, prompt, feedbacks, raciocínio, resposta bruta ou
-mensagens/metadados arbitrários devolvidos pelo provedor. O adaptador Gemini
-registra o status e até 300 caracteres da mensagem de erro do SDK.
+mensagens/metadados arbitrários devolvidos pelo provedor. O adaptador Gemini e
+os avisos de nova tentativa dos dois provedores registram só o status HTTP, o nome
+e o código do erro (`describeError`), sem a mensagem do SDK.
 
 Todos os códigos abaixo chegam ao Gateway com status `502`.
 
@@ -98,7 +99,7 @@ Todos os códigos abaixo chegam ao Gateway com status `502`.
 | `ia_provider_error` | Outro erro informado pelo provedor |
 | `invalid_provider_response` | Envelope ou tipo de conteúdo inesperado |
 | `empty_ai_response` | Resposta sem conteúdo |
-| `truncated_ai_response` | Saída cortada por limite de tokens (no Gemini, sai como `invalid_ai_response`) |
+| `truncated_ai_response` | Saída cortada por limite de tokens, nos dois provedores |
 | `ai_response_refused` | Recusa/filtro de conteúdo |
 | `invalid_ai_response` | Texto não interpretável como JSON |
 | `invalid_ai_response_schema` | Estrutura, tipos ou IDs inválidos |

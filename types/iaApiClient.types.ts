@@ -60,10 +60,10 @@ export type SynthesizeInsightsParams = {
  * Serve para desacoplar implementacao da chamada remota do restante do fluxo.
  */
 export type IaApiClient = {
-  generateCompanyQuestions?: (context: IaAnalyzeEnterpriseContext) => Promise<CompanyQuestionSuggestionsRemoteResponse>;
+  generateCompanyQuestions: (context: IaAnalyzeEnterpriseContext) => Promise<CompanyQuestionSuggestionsRemoteResponse>;
   analyzeBatch: (params: AnalyzeBatchWithIaParams) => Promise<ParsedIaResponse>;
   synthesizeInsights: (params: SynthesizeInsightsParams) => Promise<IaAnalyzeInsights>;
-  diagnoseScope?: (params: DiagnoseScopeParams) => Promise<ScopeDiagnosisResult>;
+  diagnoseScope: (params: DiagnoseScopeParams) => Promise<ScopeDiagnosisResult>;
 };
 
 export type DiagnoseScopeParams = {

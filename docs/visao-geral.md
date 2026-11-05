@@ -22,7 +22,7 @@ Separar a IA do API Gateway traz três vantagens práticas:
 ## Como Funciona
 
 1. O API Gateway envia `POST /internal/ia-analyze/analyze` com `{ enterprise_context, batches[] }`
-2. Se um **token interno** estiver configurado (`IA_ANALYZE_INTERNAL_TOKEN`), o serviço valida o header `x-ia-analyze-token` e rejeita requisições sem token válido (`401`); sem token configurado, aceita a requisição (default — só para dev local)
+2. Se um **token interno** estiver configurado (`IA_ANALYZE_INTERNAL_TOKEN`), o serviço valida o header `x-ia-analyze-token` e rejeita requisições sem token válido (`401`); sem token configurado, aceita a requisição no dev local e responde `503 internal_auth_not_configured` em produção
 3. Para cada batch, chama o provedor LLM com um prompt estruturado por escopo, com concorrência limitada. Quando o escopo tem pergunta própria no campo de comentário, ela vai junto (`message_question`) para o modelo ler o comentário como resposta a ela
 4. **Valida** a resposta do lote: formato, um resultado por feedback enviado (sem omissões, duplicatas ou IDs de fora) e resumo e recomendações em **pt-BR** — texto em outro idioma ganha uma única nova tentativa com reforço de idioma ([detalhes](./validacao-respostas-ia.md))
 5. Processa e **sanitiza** a resposta: valida sentimentos, extrai keywords e categorias, descarta alucinações. Além disso, extrai **aspectos (ABSA)** com sentimento por aspecto, calcula uma **intensidade graduada** do sentimento geral (`sentiment_score` em `[-1,1]`) e uma **confiança** da classificação (`confidence` em `[0,1]`) por feedback, e mapeia cada categoria saneada para uma **taxonomia fixa por escopo** (canonicalização — categorias sem correspondência ficam como "emergentes")
@@ -54,7 +54,7 @@ x-ia-analyze-token: <IA_ANALYZE_INTERNAL_TOKEN>
 
 O valor deve ser idêntico ao configurado no API Gateway via variável de ambiente `IA_ANALYZE_INTERNAL_TOKEN`. Requisições com token inválido recebem `401 unauthorized_internal_request`.
 
-> **Nota:** o token é **opcional** em desenvolvimento local. Se `IA_ANALYZE_INTERNAL_TOKEN` não estiver definido, `analyze` e `synthesize-insights` aceitam todas as requisições. `diagnose-scope` e `generate-company-questions` só aceitam sem token fora da Vercel e fora de `NODE_ENV=production`; lá, respondem `503 internal_auth_not_configured`.
+> **Nota:** o token é **opcional** em desenvolvimento local. Se `IA_ANALYZE_INTERNAL_TOKEN` não estiver definido, as rotas só aceitam requisições fora da Vercel e fora de `NODE_ENV=production`; lá, todas respondem `503 internal_auth_not_configured`.
 
 > ⚠️ **Aviso:** Nunca exponha a URL do IA Analyze publicamente. Ela deve ser acessível apenas pelo API Gateway na rede interna.
 

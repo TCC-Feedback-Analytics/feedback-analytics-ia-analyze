@@ -1,7 +1,6 @@
 import { createProvider } from '../providers/createProvider.js';
 import { IaApiClientError } from '../providers/shared/retry.js';
 import { IaAnalyzeServiceError, type LlmCreds } from './iaAnalyze.service.js';
-import { parseCompanyQuestionSuggestions } from '../validations/companyQuestionSuggestions.validation.js';
 import type { CompanyQuestionSuggestionsRemoteRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/company-question-suggestions.contract';
 
 export async function generateCompanyQuestionSuggestions(body: CompanyQuestionSuggestionsRemoteRequest, creds?: LlmCreds) {
@@ -10,8 +9,8 @@ export async function generateCompanyQuestionSuggestions(body: CompanyQuestionSu
   }
   try {
     const client = createProvider({ provider: creds.provider as 'openrouter' | 'gemini', apiKey: creds.apiKey, model: creds.model });
-    if (!client.generateCompanyQuestions) throw new IaAnalyzeServiceError('Unsupported operation', 503, 'question_generation_service_unavailable');
-    return parseCompanyQuestionSuggestions(await client.generateCompanyQuestions(body.enterprise_context));
+    // Os dois provedores já devolvem as perguntas validadas (parseCompanyQuestionSuggestions).
+    return await client.generateCompanyQuestions(body.enterprise_context);
   } catch (error) {
     if (error instanceof IaAnalyzeServiceError) throw error;
     const code = error instanceof IaApiClientError ? error.code : 'failed_ia_request';

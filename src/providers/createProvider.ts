@@ -22,7 +22,6 @@ export function createProvider(config: ProviderConfig): IaApiClient {
     case 'openrouter':
       return createOpenRouterClient({ apiKey: config.apiKey, model: config.model });
     case 'gemini':
-    default:
       return createIaApiClient(config.apiKey, config.model);
   }
 }

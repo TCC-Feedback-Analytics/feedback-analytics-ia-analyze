@@ -29,7 +29,7 @@ Copie `.env.example` para `.env` e preencha:
 
 | Variável | Obrigatória | Para quê |
 |---|---|---|
-| `IA_ANALYZE_INTERNAL_TOKEN` | não (local) | Token do header `x-ia-analyze-token`; quando definido, deve ser idêntico ao configurado no API Gateway. **Se vazio, `analyze` e `synthesize-insights` ficam abertos** (só para dev local); na Vercel ou com `NODE_ENV=production`, `diagnose-scope` e `generate-company-questions` respondem `503 internal_auth_not_configured` |
+| `IA_ANALYZE_INTERNAL_TOKEN` | não (local) | Token do header `x-ia-analyze-token`; quando definido, deve ser idêntico ao configurado no API Gateway. **Se vazio, as rotas ficam abertas** só no dev local; na Vercel ou com `NODE_ENV=production`, todas respondem `503 internal_auth_not_configured` |
 | `PORT` | não | Porta local do Express (default `4100`; ignorada na Vercel) |
 | `IA_LLM_CONCURRENCY` | não | Máx. de chamadas simultâneas ao LLM por requisição (default `3`; evita rate limit 429) |
 

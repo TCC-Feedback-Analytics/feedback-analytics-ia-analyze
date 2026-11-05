@@ -35,15 +35,15 @@ x-ia-analyze-token: <IA_ANALYZE_INTERNAL_TOKEN>
 Content-Type: application/json
 ```
 
-> **Nota:** o token é **opcional**. Se `IA_ANALYZE_INTERNAL_TOKEN` não estiver definido no ambiente do serviço, todas as requisições são aceitas — comportamento intencional para desenvolvimento local.
+> **Nota:** o token só é **opcional** no desenvolvimento local. Sem `IA_ANALYZE_INTERNAL_TOKEN`, as rotas aceitam todas as requisições fora da Vercel e fora de `NODE_ENV=production`; lá, todas respondem `503 internal_auth_not_configured`.
 
 > **Credenciais do LLM (BYO-key).** O Gateway envia o provedor, a chave e o modelo da empresa por header — fora do corpo e dos logs:
 > ```
-> x-llm-provider: openrouter | gemini  # qualquer outro valor vira gemini
+> x-llm-provider: openrouter | gemini  # outro valor responde 409 ia_config_required
 > x-llm-api-key:  <chave da empresa>
 > x-llm-model:    <id do modelo>       # opcional
 > ```
-> Nesta rota e em `/synthesize-insights`, o que faltar nos headers vem do ambiente: `LLM_PROVIDER` (padrão `gemini`), `LLM_MODEL` e a chave do provedor (`OPENROUTER_API_KEY` ou `GEMINI_API_KEY`). Sem modelo, vale o padrão do provedor (`openrouter/auto` ou `gemini-2.5-flash`). No fluxo normal, o Gateway bloqueia a operação com `ia_config_required` antes de chamar este serviço quando a empresa ainda não configurou a chave.
+> Nesta rota e em `/synthesize-insights`, o que faltar nos headers vem do ambiente: `LLM_PROVIDER` (sem padrão: vazio ou desconhecido responde `409 ia_config_required`), `LLM_MODEL` e a chave do provedor (`OPENROUTER_API_KEY` ou `GEMINI_API_KEY`). Sem modelo, vale o padrão do provedor (`openrouter/auto` ou `gemini-2.5-flash`). No fluxo normal, o Gateway bloqueia a operação com `ia_config_required` antes de chamar este serviço quando a empresa ainda não configurou a chave.
 
 **Schema do Body**
 
@@ -225,7 +225,7 @@ No prompt, cada resumo parcial é cortado em 6.000 caracteres e cada insight par
 - de 1 a 8 recomendações, nenhuma vazia (o prompt pede de 5 a 8);
 - resumo e recomendações passam pela checagem de pt-BR, com uma única nova tentativa reforçada.
 
-Os erros são `400 invalid_payload`, `401`, `500 missing_*_api_key`, `500 internal_server_error` e, em qualquer falha do provedor ou da validação, `502` com o código da falha (tabela abaixo).
+Os erros são `400 invalid_payload`, `401`, `409 ia_config_required` (sem provedor válido), `500 missing_*_api_key`, `500 internal_server_error`, `503 internal_auth_not_configured` (produção sem token interno) e, em qualquer falha do provedor ou da validação, `502` com o código da falha (tabela abaixo).
 
 ---
 
@@ -332,14 +332,14 @@ Os erros são os do provedor (tabela abaixo) com status `502`, além de `400 inv
 |---|---|---|
 | `400` | `invalid_payload` | Body fora do formato da rota (em `/analyze`, `enterprise_context` ou `batches` ausentes) |
 | `401` | `unauthorized_internal_request` | Header `x-ia-analyze-token` ausente ou incorreto, com `IA_ANALYZE_INTERNAL_TOKEN` configurado |
-| `409` | `ia_config_required` | `/diagnose-scope` ou `/generate-company-questions` sem as três credenciais `x-llm-*` válidas |
+| `409` | `ia_config_required` | `/diagnose-scope` ou `/generate-company-questions` sem as três credenciais `x-llm-*` válidas; `/analyze` ou `/synthesize-insights` sem provedor válido (`openrouter` ou `gemini`) no header nem no `LLM_PROVIDER` |
 | `500` | `missing_gemini_api_key` | Provedor `gemini` sem chave: nem header `x-llm-api-key` nem `GEMINI_API_KEY` no ambiente (`/analyze` e `/synthesize-insights`) |
 | `500` | `missing_openrouter_api_key` | Provedor `openrouter` sem chave: nem header `x-llm-api-key` nem `OPENROUTER_API_KEY` no ambiente (`/analyze` e `/synthesize-insights`) |
 | `500` | `internal_server_error` | Erro inesperado no serviço |
 | `502` | `failed_ia_request` | Falha ao chamar o provedor LLM, após esgotar as tentativas do provider: no Gemini, qualquer erro do SDK (credencial, cota ou rede); no OpenRouter, falha de rede ou timeout — ver Troubleshooting |
-| `502` | `invalid_ai_response` | Provedor LLM retornou resposta não parseável como JSON; no Gemini, também a saída truncada (`finishReason=MAX_TOKENS`) |
-| `502` | demais códigos do provedor | Erro HTTP do provedor (`ia_provider_*`), recusa, resposta vazia ou truncada no OpenRouter, schema, idioma ou cobertura incompleta — ver [validação das respostas](validacao-respostas-ia.md) |
-| `503` | `internal_auth_not_configured` | `/diagnose-scope` ou `/generate-company-questions` em produção (`VERCEL=1` ou `NODE_ENV=production`) sem `IA_ANALYZE_INTERNAL_TOKEN` |
+| `502` | `invalid_ai_response` | Provedor LLM retornou resposta não parseável como JSON |
+| `502` | demais códigos do provedor | Erro HTTP do provedor (`ia_provider_*`), recusa, resposta vazia no OpenRouter, truncada (`truncated_ai_response`, nos dois provedores), schema, idioma ou cobertura incompleta — ver [validação das respostas](validacao-respostas-ia.md) |
+| `503` | `internal_auth_not_configured` | Qualquer rota em produção (`VERCEL=1` ou `NODE_ENV=production`) sem `IA_ANALYZE_INTERNAL_TOKEN` |
 
 **Formato dos erros:**
 ```json
@@ -349,7 +349,7 @@ Os erros são os do provedor (tabela abaixo) com status `502`, além de `400 inv
 }
 ```
 
-Em `/diagnose-scope` e `/generate-company-questions`, só o `401` traz `message`; os demais erros dessas rotas trazem só `error`.
+Em `/diagnose-scope` e `/generate-company-questions`, só o `401` traz `message`; os demais erros dessas rotas trazem só `error`. Em todas as rotas, o `503 internal_auth_not_configured` traz só `error`.
 
 ---
 
@@ -360,5 +360,5 @@ Em `/diagnose-scope` e `/generate-company-questions`, só o `401` traz `message`
 | `401` em toda requisição | Token interno errado | Iguale `IA_ANALYZE_INTERNAL_TOKEN` no Gateway e no IA Analyze |
 | `500 missing_gemini_api_key` / `missing_openrouter_api_key` | Chave do provedor ausente em uma chamada interna direta | Garanta que o Gateway enviou `x-llm-provider`, `x-llm-api-key` e, opcionalmente, `x-llm-model` |
 | `502 failed_ia_request` | Provedor LLM inacessível | Verifique a chave de API e a conectividade com a internet. Só é propagado **após esgotar o retry/backoff** do provider (até 4 tentativas, com backoff exponencial + jitter e respeito ao delay sugerido — `retryDelay` do Gemini ou `Retry-After` do OpenRouter); `/generate-company-questions` não retenta |
-| `502 invalid_ai_response` | Modelo retornou JSON malformado **ou**, no Gemini, saída truncada (`finishReason=MAX_TOKENS`; no OpenRouter, a truncada sai como `truncated_ai_response`) | Tente novamente; pode ser instabilidade do modelo. Se for truncamento recorrente, reduza o tamanho dos lotes na configuração do **API Gateway** (variável `IA_MAX_FEEDBACKS_PER_BATCH` **do Gateway** — o fatiamento de lotes acontece lá, não neste serviço) |
+| `502 invalid_ai_response` ou `truncated_ai_response` | Modelo retornou JSON malformado, ou a saída foi cortada pelo limite de tokens (`truncated_ai_response`, nos dois provedores) | Tente novamente; pode ser instabilidade do modelo. Se for truncamento recorrente, reduza o tamanho dos lotes na configuração do **API Gateway** (variável `IA_MAX_FEEDBACKS_PER_BATCH` **do Gateway** — o fatiamento de lotes acontece lá, não neste serviço) |
 | Analyses vazias (`analyses: []`) | `batches` veio vazio ou só com lotes sem feedbacks. Lote com falha não gera lista vazia: a requisição inteira sai com `502` | Confira o fatiamento de lotes no Gateway; num `502`, cheque os logs por `execução incompleta` e pelos códigos dos lotes (`failed_ia_request`, `invalid_ai_response_schema` etc.) |
