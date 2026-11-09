@@ -5,8 +5,12 @@ import type { AnalyzeBatchWithIaParams } from '../../../types/iaApiClient.types.
 // `ai.models.generateContent`. Hoisted para o factory de vi.mock enxergar.
 const { mockGenerateContent } = vi.hoisted(() => ({ mockGenerateContent: vi.fn() }));
 
+// Desde o Vitest 4, o mock chamado com `new` constrói a instância: a implementação precisa ser
+// `function` (ou `class`), porque uma função de seta não pode ser construtor.
 vi.mock('@google/genai', () => ({
-  GoogleGenAI: vi.fn(() => ({ models: { generateContent: mockGenerateContent } })),
+  GoogleGenAI: vi.fn(function () {
+    return { models: { generateContent: mockGenerateContent } };
+  }),
 }));
 
 import {

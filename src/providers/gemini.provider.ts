@@ -110,7 +110,9 @@ export function createIaApiClient(
   apiKey: string,
   model: string = DEFAULT_GEMINI_MODEL,
 ): IaApiClient {
-  const ai = new GoogleGenAI({ apiKey });
+  // A partir do @google/genai 3, o padrão é a API v1; a chamada abaixo (thinkingConfig,
+  // systemInstruction) foi feita e testada na v1beta, então ela fica fixa até alguém migrar de propósito.
+  const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
 
   async function generateJson(prompt: string, questionTask = false): Promise<unknown> {
     let aiResponse: AiResponseShape;
