@@ -4,7 +4,7 @@ Serviço **serverless** de análise de feedbacks por IA do [Feedback Analytics](
 
 Não tem banco de dados, não autentica usuários finais e não conhece a regra de negócio do sistema: é um processador de texto isolado, acessível **apenas** pelo API Gateway.
 
-- **Runtime:** Node.js 20+ · TypeScript (ESM) · Express 5
+- **Runtime:** Node.js 22 (`engines` `>=22`; o Vitest 5 pede 22.12 ou mais novo) · TypeScript (ESM) · Express 5
 - **IA:** fábrica de provedores (padrão Strategy) com dois adaptadores — **OpenRouter** (API compatível com OpenAI; é o que o Gateway configura por empresa) e **Gemini** (`@google/genai`); provedor, chave e modelo vêm por requisição
 - **Contratos:** tipos (type-only) de [`@feedback/lib-shared`](https://github.com/TCC-Feedback-Analytics/feedback-analytics-contracts) (git tag `v1.7.0`)
 - **Deploy:** Vercel serverless (`@vercel/node` roda `src/index.ts`, `maxDuration` 300s)
@@ -33,7 +33,7 @@ Copie `.env.example` para `.env` e preencha:
 | `PORT` | não | Porta local do Express (default `4100`; ignorada na Vercel) |
 | `IA_LLM_CONCURRENCY` | não | Máx. de chamadas simultâneas ao LLM por requisição (default `3`; evita rate limit 429) |
 
-Provedor, modelo e chave não são configurações globais deste serviço no fluxo atual. O Gateway guarda a configuração OpenRouter de cada empresa cifrada e a envia decifrada pelos headers internos `x-llm-*`.
+Provedor, modelo e chave não são configurações globais deste serviço no fluxo atual. O Gateway guarda a configuração OpenRouter de cada empresa cifrada e a envia decifrada pelos headers internos `x-llm-*`. Como fallback legado, a análise e a síntese ainda leem `LLM_PROVIDER`, `LLM_MODEL`, `OPENROUTER_API_KEY` e `GEMINI_API_KEY`; elas não fazem parte da configuração padrão. O código também aceita `IA_GEMINI_CONCURRENCY` como nome antigo de `IA_LLM_CONCURRENCY`.
 
 ## Rodar localmente
 
