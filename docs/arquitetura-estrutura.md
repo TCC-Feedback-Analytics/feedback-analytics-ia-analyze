@@ -229,7 +229,6 @@ feedback-analytics-ia-analyze/
     ├── iaAnalyzeEngine.types.ts
     ├── iaAnalyzePromptBuilders.types.ts
     ├── iaApiClient.types.ts
-    ├── insightsSynthesis.types.ts
     ├── sentimentAnalysis.types.ts
     └── termProcessing.types.ts
 ```
