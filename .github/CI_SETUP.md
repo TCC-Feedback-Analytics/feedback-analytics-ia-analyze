@@ -20,7 +20,7 @@ O **CI** (lint/typecheck/unit) **não precisa de secret** — os testes são moc
 
 ## CI
 
-`ci.yml` roda em `push` e `pull_request` para `main` e `developer`, com Node 20, em
+`ci.yml` roda em `push` e `pull_request` para `main` e `developer`, com Node 22, em
 dois jobs: `lint-typecheck` (`npm run lint` + `tsc -p tsconfig.ci.json --noEmit`) e
 `unit-tests` (`npm test`).
 
@@ -28,8 +28,9 @@ dois jobs: `lint-typecheck` (`npm run lint` + `tsc -p tsconfig.ci.json --noEmit`
 
 O token interno (`IA_ANALYZE_INTERNAL_TOKEN`, autenticação do header
 `x-ia-analyze-token` entre o api-gateway e este serviço) é variável de ambiente
-configurada nas **Settings do projeto Vercel** — não entra no CI. Na Vercel, sem ele,
-`diagnose-scope` e `generate-company-questions` respondem `503`. Provedor, chave e
+configurada nas **Settings do projeto Vercel** — não entra no CI. Na Vercel ou com
+`NODE_ENV=production`, sem ele, as quatro rotas POST respondem `503`: `analyze`,
+`synthesize-insights`, `diagnose-scope` e `generate-company-questions`. Provedor, chave e
 modelo do LLM **não** ficam no ambiente: o api-gateway manda os da empresa em cada
 requisição (headers `x-llm-*`). O código ainda lê `LLM_PROVIDER`, `GEMINI_API_KEY`/
 `OPENROUTER_API_KEY` e `LLM_MODEL` como fallback legado na análise e na síntese, mas
@@ -43,3 +44,7 @@ ver `.env.example`.)
 (`VERCEL_PROJECT_ID_IA_ANALYZE`) → URL não muda; o api-gateway continua
 chamando o serviço na mesma URL. Aceito **apenas na branch `main`** — não há mais
 deploy da branch `developer`/alias de homologação.
+
+O job usa Node 22, reescreve `ssh` para `https` e roda `npm ci`. Depois executa
+`npx vercel deploy --yes --prod --token "$VERCEL_TOKEN" --local-config vercel.json`.
+Um novo disparo na mesma branch cancela o anterior.

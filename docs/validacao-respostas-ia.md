@@ -3,7 +3,10 @@
 O OpenRouter é chamado com `response_format: { type: "json_object" }` e
 `provider: { require_parameters: true }`. O modelo escolhido pela empresa não é
 trocado automaticamente. Se não houver provedor compatível/disponível, a chamada
-falha com diagnóstico; não há fallback silencioso para um modelo pago.
+falha com diagnóstico; não há fallback silencioso para um modelo pago. A exceção
+é a empresa sem modelo salvo (linhas antigas no banco do Gateway): sem
+`x-llm-model`, a análise e a síntese usam o `LLM_MODEL` do ambiente ou
+`openrouter/auto`, e o roteador automático pode escolher um modelo pago.
 
 O HTTP 200 não basta: erros no corpo, falta de `choices`, conteúdo vazio, recusa,
 saída truncada, JSON inválido e estrutura inválida são tratados separadamente.
@@ -24,6 +27,28 @@ feedback) e textos sem evidência suficiente passam. Na análise, na síntese e 
 diagnóstico, o serviço faz uma única nova tentativa com reforço de idioma; uma
 segunda resposta inválida falha com código tipado, sem loop de regeneração. Nas
 perguntas sugeridas não há nova tentativa: o texto fora do pt-BR falha direto.
+
+## Saneamento das análises
+
+Depois da validação do lote, cada análise passa por um saneamento local.
+
+- Categorias, palavras-chave e aspectos são normalizados: minúsculas, sem
+  acento e sem pontuação, menos o hífen.
+- Cada termo precisa estar no `message`. Vale o termo contido no texto, ou uma
+  palavra dele, de 4 letras ou mais, que também apareça no texto. O resto é
+  descartado, para a IA não inventar assuntos.
+- Saem os rótulos da escala (péssimo, ruim, mediana, boa, ótima) e os textos e
+  as respostas das perguntas dinâmicas do feedback.
+- Termos repetidos saem. Ficam até 6 palavras-chave, 4 categorias e 6 aspectos.
+- Sem palavra-chave válida, o serviço usa até 4 palavras do próprio `message`,
+  cada uma com 4 letras ou mais e que não seja stopword nem rótulo da escala.
+- Sem categoria válida, o serviço usa as 2 primeiras palavras-chave.
+- As categorias passam pela taxonomia fixa do escopo: um canônico ou sinônimo
+  vira o canônico, e basta uma palavra da categoria bater. Sem nenhuma, o termo
+  fica como categoria emergente.
+- Sem `sentiment_score` geral, vale 0,6 para positivo, 0 para neutro e -0,6 para
+  negativo. Sem `confidence`, o campo não sai.
+- Categorias, palavras-chave e aspectos não passam pela checagem de idioma.
 
 ## Síntese final
 
@@ -63,12 +88,20 @@ empresa. É uma chamada sem retry, com timeout de 60 s.
 - A resposta precisa ter exatamente três perguntas, com `question_order` 1, 2 e
   3 em ordem e sem campo a mais; cada uma de 20 a 150 caracteres, terminando no
   único `?` e sem caractere de controle; e as três distintas, ignorando acento,
-  caixa e espaços. Estrutura fora disso: `invalid_ai_response_schema`.
+  caixa e espaços repetidos. Estrutura fora disso: `invalid_ai_response_schema`.
 
 ## Conclusão integral
 
 - Cada lote precisa devolver exatamente um resultado válido por ID enviado,
-  sem IDs externos, duplicações ou omissões, além de um resumo válido.
+  sem IDs externos, duplicações ou omissões. Precisa também de um resumo não
+  vazio e de recomendações em lista de textos.
+- Em cada item, `sentiment` vale `positive`, `neutral` ou `negative`, e
+  `categories` e `keywords` são listas de textos. `sentiment_score` fora de
+  [-1, 1] ou `confidence` fora de [0, 1] invalidam o lote. Todo aspecto precisa
+  de rótulo, de sentimento válido e de `sentiment_score` em [-1, 1]; um único
+  aspecto sem nota derruba o lote, embora o contrato marque esse campo como
+  opcional. Sem isso, o lote falha com `invalid_ai_response_schema`; a omissão
+  de um ID dá `incomplete_ai_response`.
 - Um lote falho interrompe o agendamento dos próximos lotes. Chamadas já em voo
   são aguardadas, mas não transformam a execução em sucesso parcial.
 - No fluxo síncrono, uma requisição com falhas não devolve resultados parciais
@@ -91,23 +124,24 @@ Todos os códigos abaixo chegam ao Gateway com status `502`.
 
 | Código | Significado |
 | --- | --- |
-| `failed_ia_request` | Provedor não alcançado: falha de rede ou timeout no OpenRouter; no Gemini, qualquer erro do SDK após as tentativas |
+| `failed_ia_request` | Provedor não alcançado. No OpenRouter, é falha de rede ou o timeout de 60 s das perguntas sugeridas, sem nova tentativa. No Gemini, é qualquer erro do SDK; só o erro transitório ganha novas tentativas antes. Nas perguntas sugeridas, o Gemini usa este código só para erro sem status conhecido |
 | `ia_provider_auth_error` | Chave recusada pelo OpenRouter (ou pelo Gemini, nas perguntas sugeridas) |
 | `ia_provider_credits_exhausted` | Créditos insuficientes (no Gemini, cota diária esgotada, nas perguntas sugeridas) |
 | `ia_provider_rate_limited` | Limite de chamadas após as tentativas transitórias (nas perguntas sugeridas, sem nova tentativa) |
-| `ia_provider_unavailable` | Provedor indisponível/incompatível ou falha upstream |
+| `ia_provider_unavailable` | Provedor indisponível ou incompatível, ou falha upstream. No OpenRouter, são os status 404, 502, 503 e 504. No Gemini, só nas perguntas sugeridas, com status 5xx |
 | `ia_provider_error` | Outro erro informado pelo provedor |
 | `invalid_provider_response` | Envelope ou tipo de conteúdo inesperado |
-| `empty_ai_response` | Resposta sem conteúdo |
+| `empty_ai_response` | Resposta sem conteúdo, só no OpenRouter. No Gemini, a resposta vazia vira `invalid_ai_response` |
 | `truncated_ai_response` | Saída cortada por limite de tokens, nos dois provedores |
-| `ai_response_refused` | Recusa/filtro de conteúdo |
+| `ai_response_refused` | Recusa ou filtro de conteúdo, só no OpenRouter |
 | `invalid_ai_response` | Texto não interpretável como JSON |
 | `invalid_ai_response_schema` | Estrutura, tipos ou IDs inválidos |
 | `invalid_ai_response_language` | Texto permaneceu fora de pt-BR após a correção (nas perguntas sugeridas, já na primeira resposta) |
 | `incomplete_ai_response` | Feedbacks ausentes ou execução parcialmente falha |
 
-Os códigos do próprio serviço (`invalid_payload`, `ia_config_required`,
-`missing_*_api_key`, `internal_auth_not_configured`) estão em
+Os códigos do próprio serviço (`invalid_payload`, `unauthorized_internal_request`,
+`ia_config_required`, `missing_*_api_key`, `internal_server_error` e
+`internal_auth_not_configured`) estão em
 [endpoints](endpoints.md).
 
 O frontend preserva esses códigos tanto na resposta síncrona quanto no polling

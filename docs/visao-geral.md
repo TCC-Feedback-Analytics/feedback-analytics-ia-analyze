@@ -22,7 +22,7 @@ Separar a IA do API Gateway traz três vantagens práticas:
 ## Como Funciona
 
 1. O API Gateway envia `POST /internal/ia-analyze/analyze` com `{ enterprise_context, batches[] }`
-2. Se um **token interno** estiver configurado (`IA_ANALYZE_INTERNAL_TOKEN`), o serviço valida o header `x-ia-analyze-token` e rejeita requisições sem token válido (`401`); sem token configurado, aceita a requisição no dev local e responde `503 internal_auth_not_configured` em produção
+2. Se um **token interno** estiver configurado (`IA_ANALYZE_INTERNAL_TOKEN`), o serviço valida o header `x-ia-analyze-token` e rejeita requisições sem token válido (`401`); sem token configurado, aceita a requisição no dev local. Na Vercel ou com `NODE_ENV=production`, responde `503 internal_auth_not_configured`
 3. Para cada batch, chama o provedor LLM com um prompt estruturado por escopo, com concorrência limitada. Quando o escopo tem pergunta própria no campo de comentário, ela vai junto (`message_question`) para o modelo ler o comentário como resposta a ela
 4. **Valida** a resposta do lote: formato, um resultado por feedback enviado (sem omissões, duplicatas ou IDs de fora) e resumo e recomendações em **pt-BR** — texto em outro idioma ganha uma única nova tentativa com reforço de idioma ([detalhes](./validacao-respostas-ia.md))
 5. Processa e **sanitiza** a resposta: valida sentimentos, extrai keywords e categorias, descarta alucinações. Além disso, extrai **aspectos (ABSA)** com sentimento por aspecto, calcula uma **intensidade graduada** do sentimento geral (`sentiment_score` em `[-1,1]`) e uma **confiança** da classificação (`confidence` em `[0,1]`) por feedback, e mapeia cada categoria saneada para uma **taxonomia fixa por escopo** (canonicalização — categorias sem correspondência ficam como "emergentes")
@@ -47,7 +47,7 @@ O processamento é dividido em oito serviços de domínio:
 
 ## Autenticação Interna
 
-Toda requisição deve incluir o header:
+Toda requisição POST às rotas `/internal/ia-analyze/*` deve incluir o header (as rotas de health não pedem):
 ```
 x-ia-analyze-token: <IA_ANALYZE_INTERNAL_TOKEN>
 ```
@@ -60,10 +60,10 @@ O valor deve ser idêntico ao configurado no API Gateway via variável de ambien
 
 ## Tecnologias
 
-- **Runtime:** Node.js 20+ com TypeScript (ESM)
+- **Runtime:** Node.js 22 com TypeScript (ESM). Os testes com Vitest 5 pedem Node 22.12 ou mais novo.
 - **Framework:** Express 5
 - **Provedor de IA por empresa:** o Gateway envia obrigatoriamente a chave e o modelo OpenRouter configurados no perfil pelos headers internos `x-llm-*`. A fábrica (`providers/createProvider.ts`, padrão Strategy/Adapter) escolhe entre os adaptadores `openrouter` e `gemini` pelo `x-llm-provider`; não há credencial LLM global no ambiente padrão. Diagnóstico e sugestões de perguntas exigem provedor, chave e modelo da empresa (sem eles, `409 ia_config_required`); análise e síntese ainda aceitam um fallback legado por variáveis de ambiente ([Arquitetura](./arquitetura-estrutura.md#provedor-de-llm-configurável--byo-key-etapa-04)).
-- **Modelo configurável:** vem do perfil da empresa; na análise e na síntese, quando omitido, o OpenRouter usa `openrouter/auto`.
+- **Modelo configurável:** vem do perfil da empresa. Na análise e na síntese, quando o modelo não vem, o OpenRouter usa `openrouter/auto` e o Gemini usa `gemini-2.5-flash`.
 - **Idioma:** todas as chamadas levam uma instrução de sistema que exige pt-BR, e o texto exibido ao usuário passa por uma validação local de idioma.
 - **Concorrência:** `IA_LLM_CONCURRENCY` (default `3`; aceita o nome antigo `IA_GEMINI_CONCURRENCY`) limita quantas chamadas ao LLM ficam em voo ao mesmo tempo por requisição, evitando estourar o rate limit do provedor (→ `429`).
 - **Resiliência:** helpers compartilhados (`providers/shared/retry.ts`) aplicam retry com backoff exponencial e jitter (até 4 tentativas) nos **dois** adaptadores, repetindo apenas em status transitórios (`429`, `500`, `502`, `503`, `504`); cada provedor decide o que **não** retentar (no OpenRouter, `401`/`402`; no Gemini, a **cota diária** falha rápido). A geração de perguntas não tem retry e tem timeout de 60 s.
