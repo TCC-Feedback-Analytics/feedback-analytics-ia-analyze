@@ -18,7 +18,7 @@ O processamento ocorre de forma sequencial através das camadas do sistema, gara
 5. O **Provider** recebe a resposta bruta da Inteligência Artificial (que está sujeita a "alucinações" ou fuga do formato) e a converte em JSON.
 6. O **Service Principal** valida o lote antes de usar: formato e cobertura exata dos IDs (`validations/iaBatchResponse.validation.ts`) e idioma do resumo e das recomendações (`validations/ptBrLanguage.validation.ts`). Texto fora do pt-BR ganha **uma** nova tentativa com o reforço de idioma no prompt; os detalhes estão em [Validação das respostas de IA](validacao-respostas-ia.md).
 7. Com o lote válido, o **Service Principal** distribui os dados para seus **Serviços de Domínio** especializados:
-   - **Análise de Sentimento:** Valida se a classificação está estritamente entre Positivo, Neutro ou Negativo.
+   - **Análise de Sentimento:** Valida se a classificação é exatamente `positive`, `neutral` ou `negative`.
    - **Palavras-chave e Categorias:** Sanitiza os termos extraídos, garantindo que eles realmente existam no texto original do cliente. As categorias ainda são **canonicalizadas** contra a taxonomia fixa do escopo (`categorization.service` passou a receber `scopeType`), tornando-as comparáveis e tendenciáveis.
    - **Aspectos (ABSA):** Extrai os aspectos com sentimento por tópico (`aspectExtraction.service`), também ancorados no texto original. Além disso, o Service Principal grava o `sentiment_score` graduado (com fallback derivado da classe de sentimento) e a `confidence` de cada item.
    - **Contexto Global:** Monta o contexto do lote (escopo, item, quantidade analisada) com os insights que o modelo devolveu para ele.
@@ -84,7 +84,7 @@ Constrói o `Set` de termos proibidos a partir do feedback:
 
 ### `tokenizeRelevantWords`
 
-Quebra uma string em palavras relevantes removendo stop words e palavras com menos de 4 caracteres. Usado como **fallback de keywords** quando o modelo não retorna nenhuma keyword válida.
+Quebra uma string em palavras relevantes. Remove stop words, palavras com menos de 4 caracteres e os rótulos de `STRUCTURED_ANSWER_LABELS`. Usado como **fallback de keywords** quando o modelo não retorna nenhuma keyword válida.
 
 ---
 
@@ -104,7 +104,7 @@ O `categorization.service` agora recebe `scopeType` e chama `canonicalizeCategor
 
 Extrai aspectos (Aspect-Based Sentiment Analysis) do que o modelo devolveu, reusando o mesmo saneamento de categorias/keywords.
 
-- **`extractAspects(feedback, rawAspects)`:** cada rótulo precisa estar **ancorado no `message`**, não pode ser termo proibido (rótulos de pergunta/Likert), é **deduplicado** e limitado a no máximo **6** aspectos. Cada aspecto preserva seu `sentiment` (validado entre Positivo/Neutro/Negativo) e seu `sentiment_score` (com `clamp` em `[-1, 1]`). Retorna `[]` quando `rawAspects` não é um array.
+- **`extractAspects(feedback, rawAspects)`:** cada rótulo precisa estar **ancorado no `message`**, não pode ser termo proibido (rótulos de pergunta/Likert), é **deduplicado** e limitado a no máximo **6** aspectos. Cada aspecto preserva seu `sentiment` (validado entre `positive`, `neutral` e `negative`) e seu `sentiment_score` (com `clamp` em `[-1, 1]`). Retorna `[]` quando `rawAspects` não é um array.
 - **Helpers:** `clampScore` (limita ao intervalo `[-1, 1]`; `undefined` se não for número válido), `normalizeConfidence` (limita a `[0, 1]`) e `scoreFromSentiment` (score padrão a partir da classe quando o modelo omite: `+0.6` / `0` / `-0.6`).
 
 ---
@@ -137,7 +137,7 @@ Além da análise de lotes, o serviço tem três tarefas, cada uma com rota, ser
 - **Diagnóstico do escopo** (`diagnose-scope`): `scopeDiagnosis.service.ts`. O Gateway manda os números já calculados do período e do anterior, o campo de comentário do escopo e uma amostra de comentários; a IA só interpreta. O prompt (`lib/scopeDiagnosisPrompt.ts`) traz as regras de leitura — confiança de cada número, participação nos comentários, pergunta própria do campo de comentário, canais de coleta (QR, link, NFC), comparação com o período anterior — e `validations/scopeDiagnosis.validation.ts` valida o pedido e a resposta. Texto fora do pt-BR ganha uma nova tentativa.
 - **Sugestões de perguntas** (`generate-company-questions`): `companyQuestionSuggestions.service.ts`. Recebe só o contexto da empresa, pede ao modelo três perguntas na escala PÉSSIMO–ÓTIMA (`lib/companyQuestionSuggestionsPrompt.ts`) e valida o retorno (`validations/companyQuestionSuggestions.validation.ts`: exatamente três, distintas, de 20 a 150 caracteres, em pt-BR).
 
-Diagnóstico e sugestões de perguntas **não usam o fallback legado** da seção abaixo: exigem provedor (`openrouter` ou `gemini`), chave e modelo da empresa nos headers `x-llm-*`; sem eles, respondem `409 ia_config_required`. Os dois controllers também respondem `503 internal_auth_not_configured` quando rodam na Vercel ou com `NODE_ENV=production` sem `IA_ANALYZE_INTERNAL_TOKEN`.
+Diagnóstico e sugestões de perguntas **não usam o fallback legado** da seção abaixo: exigem provedor (`openrouter` ou `gemini`), chave e modelo da empresa nos headers `x-llm-*`; sem eles, respondem `409 ia_config_required`. Como as outras duas, essas rotas respondem `503 internal_auth_not_configured` quando rodam na Vercel ou com `NODE_ENV=production` sem `IA_ANALYZE_INTERNAL_TOKEN`. A regra vale para as quatro rotas POST.
 
 ---
 
@@ -201,35 +201,35 @@ feedback-analytics-ia-analyze/
 │   │   ├── insightsSynthesis.validation.ts → Resposta da síntese
 │   │   ├── scopeDiagnosis.validation.ts    → Pedido e resposta do diagnóstico
 │   │   └── companyQuestionSuggestions.validation.ts → Pedido e resposta das sugestões de perguntas
-│   └── utils/
-│       ├── extractJsonFromText.ts
-│       ├── isInternalRequestAuthorized.ts
-│       ├── isObject.ts
-│       └── normalizeForComparison.ts
-├── types/                                  → Tipos locais (fora de src/) que compõem/reexportam contratos de @feedback/lib-shared
-│   ├── iaAnalyzeEngine.types.ts
-│   ├── iaAnalyzePromptBuilders.types.ts
-│   ├── iaApiClient.types.ts
-│   ├── insightsSynthesis.types.ts
-│   ├── sentimentAnalysis.types.ts
-│   └── termProcessing.types.ts
-└── src/tests/
-    ├── lib/
-    │   ├── termProcessing.test.ts
-    │   ├── categoryTaxonomy.test.ts
-    │   └── iaAnalyzePrompt.test.ts
-    ├── routes/
-    │   ├── analyze.test.ts
-    │   ├── diagnoseScope.test.ts
-    │   └── health.test.ts
-    ├── providers/
-    │   ├── gemini.provider.test.ts
-    │   └── openrouter.provider.test.ts
-    ├── services/
-    │   ├── sentiment.test.ts
-    │   ├── aspectExtraction.test.ts
-    │   ├── iaAnalyzeCompletion.test.ts
-    │   └── scopeDiagnosis.test.ts
-    └── validations/
-        └── ptBrLanguage.test.ts
+│   ├── utils/
+│   │   ├── extractJsonFromText.ts
+│   │   ├── isInternalRequestAuthorized.ts
+│   │   ├── isObject.ts
+│   │   └── normalizeForComparison.ts
+│   └── tests/
+│       ├── lib/
+│       │   ├── termProcessing.test.ts
+│       │   ├── categoryTaxonomy.test.ts
+│       │   └── iaAnalyzePrompt.test.ts
+│       ├── routes/
+│       │   ├── analyze.test.ts
+│       │   ├── diagnoseScope.test.ts
+│       │   └── health.test.ts
+│       ├── providers/
+│       │   ├── gemini.provider.test.ts
+│       │   └── openrouter.provider.test.ts
+│       ├── services/
+│       │   ├── sentiment.test.ts
+│       │   ├── aspectExtraction.test.ts
+│       │   ├── iaAnalyzeCompletion.test.ts
+│       │   └── scopeDiagnosis.test.ts
+│       └── validations/
+│           └── ptBrLanguage.test.ts
+└── types/                                  → Tipos locais (fora de src/) montados sobre os contratos de @feedback/lib-shared
+    ├── iaAnalyzeEngine.types.ts
+    ├── iaAnalyzePromptBuilders.types.ts
+    ├── iaApiClient.types.ts
+    ├── insightsSynthesis.types.ts
+    ├── sentimentAnalysis.types.ts
+    └── termProcessing.types.ts
 ```

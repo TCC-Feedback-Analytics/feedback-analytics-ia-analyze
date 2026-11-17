@@ -2,7 +2,7 @@
 
 > **Base URL (desenvolvimento):** `http://localhost:4100`
 
-> ⚠️ **Serviço interno.** Esta API é exclusivamente para comunicação interna — nunca exponha esses endpoints diretamente ao frontend. Todo acesso vem do API Gateway. Quando `IA_ANALYZE_INTERNAL_TOKEN` está configurado, o Gateway envia o token no header `x-ia-analyze-token` (ver nota sobre o comportamento opcional abaixo).
+> ⚠️ **Serviço interno.** Esta API é exclusivamente para comunicação interna — nunca exponha esses endpoints diretamente ao frontend. Todo acesso vem do API Gateway. O Gateway envia o token no header `x-ia-analyze-token` quando a variável `IA_ANALYZE_REMOTE_TOKEN` dele está preenchida. O valor tem de ser igual ao `IA_ANALYZE_INTERNAL_TOKEN` deste serviço (ver nota sobre o comportamento opcional abaixo).
 
 ---
 
@@ -35,7 +35,7 @@ x-ia-analyze-token: <IA_ANALYZE_INTERNAL_TOKEN>
 Content-Type: application/json
 ```
 
-> **Nota:** o token só é **opcional** no desenvolvimento local. Sem `IA_ANALYZE_INTERNAL_TOKEN`, as rotas aceitam todas as requisições fora da Vercel e fora de `NODE_ENV=production`; lá, todas respondem `503 internal_auth_not_configured`.
+> **Nota:** o token só é **opcional** no desenvolvimento local. Sem `IA_ANALYZE_INTERNAL_TOKEN`, as quatro rotas POST aceitam qualquer requisição fora da Vercel e fora de `NODE_ENV=production`. Na Vercel ou em produção, elas respondem `503 internal_auth_not_configured`. As rotas de health ficam sempre abertas.
 
 > **Credenciais do LLM (BYO-key).** O Gateway envia o provedor, a chave e o modelo da empresa por header — fora do corpo e dos logs:
 > ```
@@ -96,7 +96,7 @@ Content-Type: application/json
       "feedbacks": [
         {
           "id": "uuid-feedback-1",
-          "message": "Risoto perfeito, muito cremoso e saboroso!",
+          "message": "Risoto perfeito, cremoso e saboroso, com ótima textura!",
           "rating": 5,
           "created_at": "2026-05-12T12:00:00Z",
           "scope_type": "PRODUCT",
@@ -126,12 +126,12 @@ Content-Type: application/json
     sentiment: 'positive' | 'neutral' | 'negative',
     categories: string[],   // máx. 4
     keywords: string[],     // máx. 6
-    sentiment_score?: number,  // intensidade graduada do sentimento geral em [-1, 1]
+    sentiment_score: number,   // sempre presente, em [-1, 1]; sem valor da IA, vale 0,6, 0 ou -0,6 pelo sentimento
     confidence?: number,       // confiança da classificação em [0, 1]
-    aspects?: Array<{          // ABSA: sentimento por aspecto, ancorado no texto (máx. 6)
+    aspects: Array<{           // sempre presente, pode vir vazio. ABSA: sentimento por aspecto, ancorado no texto (máx. 6)
       aspect: string,
       sentiment: 'positive' | 'neutral' | 'negative',
-      sentiment_score?: number
+      sentiment_score: number  // a validação exige, em [-1, 1]
     }>
   }>,
   contexts: Array<{
@@ -180,9 +180,9 @@ Content-Type: application/json
 }
 ```
 
-> **Nota:** `keywords` e `categorias` são sempre retornadas **normalizadas** — minúsculas, sem acento e sem pontuação (ex.: `"Atendimento Ágil"` vira `"atendimento agil"`).
+> **Nota:** `keywords`, `categories` e `aspects[].aspect` saem normalizados: minúsculas, sem acento e sem pontuação, menos o hífen. Ex.: "Atendimento Ágil" vira "atendimento agil". Depois, cada categoria passa pela taxonomia do escopo. Ex.: no escopo COMPANY, "atendimento agil" vira "atendimento". Cada termo também precisa aparecer no `message`; o que não aparece é descartado.
 
-Com `batches` vazio, a resposta é `200` com as duas listas vazias, sem chamar o LLM; lotes sem feedbacks são ignorados. Não há sucesso parcial: se um lote falhar, a requisição inteira sai com `502` e o código do erro (`incomplete_ai_response` quando outros lotes já tinham concluído) — ver [validação das respostas](validacao-respostas-ia.md).
+Com `batches` vazio, a resposta é `200` com as duas listas vazias. O LLM não é chamado e não se exige provedor. Lotes sem feedbacks são ignorados, mas o provedor e a chave ainda precisam ser resolvidos; sem eles, a resposta é `409` ou `500`. Não há sucesso parcial: se um lote falhar, a requisição inteira sai com `502` e o código do erro (`incomplete_ai_response` quando outros lotes já tinham concluído) — ver [validação das respostas](validacao-respostas-ia.md).
 
 ---
 
@@ -336,10 +336,10 @@ Os erros são os do provedor (tabela abaixo) com status `502`, além de `400 inv
 | `500` | `missing_gemini_api_key` | Provedor `gemini` sem chave: nem header `x-llm-api-key` nem `GEMINI_API_KEY` no ambiente (`/analyze` e `/synthesize-insights`) |
 | `500` | `missing_openrouter_api_key` | Provedor `openrouter` sem chave: nem header `x-llm-api-key` nem `OPENROUTER_API_KEY` no ambiente (`/analyze` e `/synthesize-insights`) |
 | `500` | `internal_server_error` | Erro inesperado no serviço |
-| `502` | `failed_ia_request` | Falha ao chamar o provedor LLM, após esgotar as tentativas do provider: no Gemini, qualquer erro do SDK (credencial, cota ou rede); no OpenRouter, falha de rede ou timeout — ver Troubleshooting |
+| `502` | `failed_ia_request` | Falha ao chamar o provedor LLM. No Gemini, é qualquer erro do SDK; só o erro transitório ganha novas tentativas antes. Em `/generate-company-questions`, o Gemini usa este código só para erro sem status conhecido. No OpenRouter, é falha de rede ou o timeout de 60 s de `/generate-company-questions`, sem nova tentativa. Também é o código de reserva para erro inesperado dentro do serviço — ver Troubleshooting |
 | `502` | `invalid_ai_response` | Provedor LLM retornou resposta não parseável como JSON |
 | `502` | demais códigos do provedor | Erro HTTP do provedor (`ia_provider_*`), recusa, resposta vazia no OpenRouter, truncada (`truncated_ai_response`, nos dois provedores), schema, idioma ou cobertura incompleta — ver [validação das respostas](validacao-respostas-ia.md) |
-| `503` | `internal_auth_not_configured` | Qualquer rota em produção (`VERCEL=1` ou `NODE_ENV=production`) sem `IA_ANALYZE_INTERNAL_TOKEN` |
+| `503` | `internal_auth_not_configured` | As quatro rotas POST em produção (`VERCEL=1` ou `NODE_ENV=production`) sem `IA_ANALYZE_INTERNAL_TOKEN`. As rotas de health não checam o token |
 
 **Formato dos erros:**
 ```json
@@ -349,7 +349,7 @@ Os erros são os do provedor (tabela abaixo) com status `502`, além de `400 inv
 }
 ```
 
-Em `/diagnose-scope` e `/generate-company-questions`, só o `401` traz `message`; os demais erros dessas rotas trazem só `error`. Em todas as rotas, o `503 internal_auth_not_configured` traz só `error`.
+Em `/diagnose-scope` e `/generate-company-questions`, só o `401` traz `message`; os demais erros dessas rotas trazem só `error`. Nas quatro rotas POST, o `503 internal_auth_not_configured` traz só `error`.
 
 ---
 
@@ -357,8 +357,8 @@ Em `/diagnose-scope` e `/generate-company-questions`, só o `401` traz `message`
 
 | Sintoma | Causa | Solução |
 |---|---|---|
-| `401` em toda requisição | Token interno errado | Iguale `IA_ANALYZE_INTERNAL_TOKEN` no Gateway e no IA Analyze |
+| `401` em toda requisição | Token interno errado | Iguale o `IA_ANALYZE_REMOTE_TOKEN` do Gateway ao `IA_ANALYZE_INTERNAL_TOKEN` do IA Analyze |
 | `500 missing_gemini_api_key` / `missing_openrouter_api_key` | Chave do provedor ausente em uma chamada interna direta | Garanta que o Gateway enviou `x-llm-provider`, `x-llm-api-key` e, opcionalmente, `x-llm-model` |
-| `502 failed_ia_request` | Provedor LLM inacessível | Verifique a chave de API e a conectividade com a internet. Só é propagado **após esgotar o retry/backoff** do provider (até 4 tentativas, com backoff exponencial + jitter e respeito ao delay sugerido — `retryDelay` do Gemini ou `Retry-After` do OpenRouter); `/generate-company-questions` não retenta |
+| `502 failed_ia_request` | Provedor LLM inacessível | Verifique a chave de API e a conectividade com a internet. O serviço só retenta erro transitório: 429, 500, 502, 503 e 504. São até 4 tentativas, com backoff exponencial e jitter. A espera respeita o `retryDelay` do Gemini ou o `Retry-After` do OpenRouter, com teto de 20 s. Falha de rede no OpenRouter e cota diária do Gemini falham na hora. `/generate-company-questions` não retenta |
 | `502 invalid_ai_response` ou `truncated_ai_response` | Modelo retornou JSON malformado, ou a saída foi cortada pelo limite de tokens (`truncated_ai_response`, nos dois provedores) | Tente novamente; pode ser instabilidade do modelo. Se for truncamento recorrente, reduza o tamanho dos lotes na configuração do **API Gateway** (variável `IA_MAX_FEEDBACKS_PER_BATCH` **do Gateway** — o fatiamento de lotes acontece lá, não neste serviço) |
-| Analyses vazias (`analyses: []`) | `batches` veio vazio ou só com lotes sem feedbacks. Lote com falha não gera lista vazia: a requisição inteira sai com `502` | Confira o fatiamento de lotes no Gateway; num `502`, cheque os logs por `execução incompleta` e pelos códigos dos lotes (`failed_ia_request`, `invalid_ai_response_schema` etc.) |
+| Analyses vazias (`analyses: []`) | `batches` veio vazio ou só com lotes sem feedbacks (neste caso, o provedor e a chave ainda precisam vir). Lote com falha não gera lista vazia: a requisição inteira sai com `502` | Confira o fatiamento de lotes no Gateway; num `502`, cheque os logs por `execução incompleta` e pelos códigos dos lotes (`failed_ia_request`, `invalid_ai_response_schema` etc.) |
