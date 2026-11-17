@@ -194,7 +194,7 @@ Etapa final (reduce) do relatório. Recebe só os insights parciais de cada lote
 
 **Headers:** os mesmos de `/analyze`, com o mesmo uso do ambiente quando faltam os `x-llm-*`.
 
-**Body:** `IaInsightsSynthesisRequest` (tipo local, em `types/insightsSynthesis.types.ts`)
+**Body:** `IaInsightsSynthesisRequest` (`@feedback/lib-shared/interfaces/contracts/ia-analyze/insights-synthesis.contract`)
 
 ```typescript
 {

@@ -22,8 +22,8 @@ import type {
   IaAnalyzeRemoteBatchInput,
 } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/input.contract';
 import type { IaAnalyzeContext } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/analysis.contract';
+import type { IaInsightsSynthesisRequest, IaInsightsSynthesisResponse } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/insights-synthesis.contract';
 import type { AnalyzeBatchWithIaParams, IaApiClient, ParsedIaResponse, SynthesizeInsightsParams } from '../../types/iaApiClient.types.js';
-import type { IaInsightsSynthesisRequest, IaInsightsSynthesisResponse } from '../../types/insightsSynthesis.types.js';
 
 /**
  * Classe de erro customizada para o serviço de análise IA.

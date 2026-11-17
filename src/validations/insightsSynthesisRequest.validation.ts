@@ -1,4 +1,4 @@
-import type { IaInsightsSynthesisRequest } from '../../types/insightsSynthesis.types.js';
+import type { IaInsightsSynthesisRequest } from '@feedback/lib-shared/interfaces/contracts/ia-analyze/insights-synthesis.contract';
 import { isObject } from '../utils/isObject.js';
 
 const VALID_SCOPES = new Set(['COMPANY', 'PRODUCT', 'SERVICE', 'DEPARTMENT']);
