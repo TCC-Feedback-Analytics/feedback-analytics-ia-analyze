@@ -6,7 +6,7 @@ Não tem banco de dados, não autentica usuários finais e não conhece a regra 
 
 - **Runtime:** Node.js 22 (`engines` `>=22`; o Vitest 5 pede 22.12 ou mais novo) · TypeScript (ESM) · Express 5
 - **IA:** fábrica de provedores (padrão Strategy) com dois adaptadores — **OpenRouter** (API compatível com OpenAI; é o que o Gateway configura por empresa) e **Gemini** (`@google/genai`); provedor, chave e modelo vêm por requisição
-- **Contratos:** tipos (type-only) de [`@feedback/lib-shared`](https://github.com/TCC-Feedback-Analytics/feedback-analytics-contracts) (git tag `v1.7.0`)
+- **Contratos:** tipos (type-only) de [`@feedback/lib-shared`](https://github.com/TCC-Feedback-Analytics/feedback-analytics-contracts) (git tag `v1.10.0`)
 - **Deploy:** Vercel serverless (`@vercel/node` roda `src/index.ts`, `maxDuration` 300s)
 
 ## Endpoints internos
