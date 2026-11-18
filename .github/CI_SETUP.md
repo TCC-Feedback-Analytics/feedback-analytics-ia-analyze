@@ -1,7 +1,7 @@
 # CI / Deploy — IA Analyze
 
 Consome **apenas tipos** de `@feedback/lib-shared` (repositório **público**
-`feedback-analytics-contracts`, via git tag `v1.7.0`). O `npm ci` clona **sem token**;
+`feedback-analytics-contracts`, via git tag `v1.10.0`). O `npm ci` clona **sem token**;
 os workflows só reescrevem `ssh→https` antes do install:
 
 ```
